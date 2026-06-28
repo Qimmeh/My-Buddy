@@ -38,8 +38,8 @@ export function BuddyAvatar({ state, onClick, isBouncing }: BuddyAvatarProps) {
       onClick={onClick}
       style={{
         cursor: 'pointer',
-        width: '150px',
-        height: '150px',
+        width: '45px',
+        height: '45px',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'flex-end',
@@ -54,7 +54,7 @@ export function BuddyAvatar({ state, onClick, isBouncing }: BuddyAvatarProps) {
           maxWidth: '100%',
           maxHeight: '100%',
           objectFit: 'contain',
-          filter: 'drop-shadow(0px 0px 10px rgba(180, 80, 255, 0.5))' // Purple tint for Raiden
+          filter: 'drop-shadow(0px 0px 3px rgba(180, 80, 255, 0.5))' // Adjusted shadow intensity
         }}
         draggable="false"
       />

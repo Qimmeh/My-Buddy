@@ -16,7 +16,7 @@ export function ChatBubble({ message, isVisible, onClick, isThinking }: ChatBubb
       onClick={onClick}
       style={{
         position: 'absolute',
-        bottom: '160px', // Right above the avatar
+        bottom: '55px', // Right above the 45px avatar
         left: '50%',
         transform: 'translateX(-50%)',
         backgroundColor: 'rgba(20, 10, 30, 0.85)',

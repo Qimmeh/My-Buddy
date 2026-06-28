@@ -14,7 +14,16 @@ export function InputTray({ isVisible, onSubmit, onClose }: InputTrayProps) {
     if (isVisible && inputRef.current) {
       inputRef.current.focus();
     }
-  }, [isVisible]);
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isVisible) {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [isVisible, onClose]);
 
   if (!isVisible) return null;
 

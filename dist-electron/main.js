@@ -218,13 +218,16 @@ function positionWindow() {
 	if (!win) return;
 	const display = screen.getPrimaryDisplay();
 	const winBounds = win.getBounds();
-	const x = display.workArea.x;
-	const y = display.workArea.y + display.workArea.height - winBounds.height;
+	const x = display.bounds.x + 20;
+	const y = display.bounds.y + display.bounds.height - winBounds.height;
 	win.setPosition(x, y, false);
+	win.setAlwaysOnTop(true, "normal");
 }
 app.whenReady().then(() => {
 	createWindow();
 	createTray();
+	positionWindow();
+	win?.show();
 	globalShortcut.register("CommandOrControl+Shift+Space", () => {
 		toggleWindow();
 	});

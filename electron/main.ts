@@ -89,16 +89,21 @@ function positionWindow() {
   const display = screen.getPrimaryDisplay()
   const winBounds = win.getBounds()
 
-  // Calculate position: bottom left, above the taskbar
-  const x = display.workArea.x
-  const y = display.workArea.y + display.workArea.height - winBounds.height
+  // Calculate position: bottom left, slightly offset from the absolute edge
+  const x = display.bounds.x + 20
+  const y = display.bounds.y + display.bounds.height - winBounds.height
 
   win.setPosition(x, y, false)
+  // Ensure it stays above normal windows but below full-screen games
+  win.setAlwaysOnTop(true, 'normal')
 }
 
 app.whenReady().then(() => {
   createWindow()
   createTray()
+
+  positionWindow()
+  win?.show()
 
   globalShortcut.register('CommandOrControl+Shift+Space', () => {
     toggleWindow()

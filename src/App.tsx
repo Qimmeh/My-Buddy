@@ -24,6 +24,21 @@ function App() {
     setState(3);
   }, []);
 
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    
+    // Only auto-hide if chat is visible, input is NOT visible, and we aren't currently thinking
+    if (chatVisible && !inputVisible && state !== 4) {
+      timeoutId = setTimeout(() => {
+        setChatVisible(false);
+      }, 5000);
+    }
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [chatVisible, inputVisible, state]);
+
   const handleAvatarClick = () => {
     // Trigger bounce
     setIsBouncing(true);
