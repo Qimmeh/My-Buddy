@@ -19,6 +19,7 @@ Here are the facts you remember about the user:
 {MEMORY_BOX}
 
 If the user asks you to play music or open Spotify (especially with a specific song, artist, or playlist), you should reply briefly acknowledging it, and end your response EXACTLY with the text: [TOOL:SPOTIFY:query].
+IMPORTANT: Make the query extremely accurate for Spotify's search engine. If it's a playlist, INCLUDE the word 'playlist' (e.g. [TOOL:SPOTIFY:qimchi playlist]). If it's a specific song by an artist, just put the song name and artist name without the word 'by' (e.g. [TOOL:SPOTIFY:double take dhruv]).
 If the user tells you to remember something about them or their preferences, you must save it by ending your response EXACTLY with the text: [TOOL:REMEMBER:fact].
 For example: [TOOL:REMEMBER:User's favorite color is blue].
 Do not include brackets except for the tool call.`
@@ -58,32 +59,75 @@ function saveMemory() {
   }
 }
 
+import { playSpotifyQuery, startSpotifyPoller } from './spotifyService.js'
+import { getActiveWindowTitle } from './activeWindow.js'
+
+let lastActiveWindow = ''
+
 export function startAiService(win: BrowserWindow) {
   loadMemory()
 
+  const triggerSpontaneousComment = async (systemPrompt: string) => {
+    try {
+      const res = await fetch(OLLAMA_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: MODEL_NAME,
+          messages: [{ role: 'system', content: systemPrompt }],
+          stream: false
+        })
+      })
+      if (res.ok) {
+        const data: any = await res.json()
+        win.webContents.send('proactive-message', data.message.content)
+      }
+    } catch (e) {
+      console.error('Failed spontaneous reaction', e)
+    }
+  }
+
+  // Poll active window every 15 seconds
+  setInterval(async () => {
+    const activeWindow = await getActiveWindowTitle()
+    if (activeWindow && activeWindow !== lastActiveWindow && !activeWindow.includes('My-Buddy') && !activeWindow.includes('Taskbar')) {
+      lastActiveWindow = activeWindow
+      
+      memoryBox = memoryBox.filter(m => !m.startsWith('User is currently looking at:'))
+      memoryBox.push(`User is currently looking at: ${activeWindow}`)
+
+      if (Math.random() < 0.3) {
+        triggerSpontaneousComment(`You are Zi Feng's Desktop Companion. He just opened an app called "${activeWindow}". Give a very short, 1-sentence spontaneous reaction or comment about it.`)
+      }
+    }
+  }, 15000)
+
+  // Start Spotify poller
+  startSpotifyPoller(win, triggerSpontaneousComment)
+
   ipcMain.handle('send-to-ollama', async (_event, prompt: string) => {
-    // Add user message to memory
     memory.push({ role: 'user', content: prompt })
     
     const response = await generateOllamaChat()
     
-    // Check for tool calls
-    const spotifyMatch = response.match(/\[TOOL:SPOTIFY:(.*?)\]/)
-    const rememberMatch = response.match(/\[TOOL:REMEMBER:(.*?)\]/)
+    // Use negated character class to capture the query correctly even if brackets are missing
+    const spotifyMatch = response.match(/\[?TOOL:SPOTIFY:([^\]\n]+)\]?/i)
+    const rememberMatch = response.match(/\[?TOOL:REMEMBER:([^\]\n]+)\]?/i)
     let finalResponse = response
     
     if (spotifyMatch) {
       const query = spotifyMatch[1].trim()
       finalResponse = finalResponse.replace(spotifyMatch[0], '').trim()
-      executeSpotifyTool(query)
-      memory.push({ role: 'system', content: `System action executed: Opened Spotify searching for ${query}` })
+      playSpotifyQuery(query, win)
+      memory.push({ role: 'system', content: `System action executed: Searching and playing Spotify for ${query}` })
     }
 
     if (rememberMatch) {
       const fact = rememberMatch[1].trim()
       finalResponse = finalResponse.replace(rememberMatch[0], '').trim()
       memoryBox.push(fact)
-      memory.push({ role: 'system', content: `System action executed: Saved fact to memory box: ${fact}` })
+      saveMemory()
+      memory.push({ role: 'system', content: `System action executed: Saved "${fact}" to long term memory.` })
     }
 
     // Add assistant message to memory
@@ -91,6 +135,13 @@ export function startAiService(win: BrowserWindow) {
     saveMemory()
 
     return finalResponse
+  })
+
+  ipcMain.on('add-manual-memory', (_event, manualMemory: string) => {
+    if (manualMemory.trim() !== '') {
+      memoryBox.push(manualMemory.trim())
+      saveMemory()
+    }
   })
 }
 
@@ -128,18 +179,4 @@ async function generateOllamaChat(): Promise<string> {
     }
     return "Connection to local AI failed. Is Ollama running?"
   }
-}
-
-function executeSpotifyTool(query: string) {
-  console.log(`Executing Spotify tool with query: ${query}`)
-  // On Windows, 'start spotify:' opens the app.
-  // We can pass a search query uri like: spotify:search:query
-  const encodedQuery = encodeURIComponent(query)
-  const command = `start spotify:search:${encodedQuery}`
-  
-  exec(command, (error) => {
-    if (error) {
-      console.error(`Failed to execute Spotify command: ${error.message}`)
-    }
-  })
 }

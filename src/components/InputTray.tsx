@@ -39,11 +39,7 @@ export function InputTray({ isVisible, onSubmit, onClose }: InputTrayProps) {
     <div 
       className="input-tray-container"
       style={{
-        position: 'absolute',
-        bottom: '80px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        width: '90%',
+        width: '100%',
         backgroundColor: 'rgba(10, 5, 20, 0.9)',
         border: '1px solid var(--neon-purple)',
         borderRadius: '12px',

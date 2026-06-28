@@ -7,10 +7,11 @@ import thinkingImg from '../assets/thinking.png';
 interface BuddyAvatarProps {
   state: 1 | 2 | 3 | 4;
   onClick: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
   isBouncing: boolean;
 }
 
-export function BuddyAvatar({ state, onClick, isBouncing }: BuddyAvatarProps) {
+export function BuddyAvatar({ state, onClick, onContextMenu, isBouncing }: BuddyAvatarProps) {
   const [currentImage, setCurrentImage] = useState(idleImg);
 
   useEffect(() => {
@@ -36,6 +37,7 @@ export function BuddyAvatar({ state, onClick, isBouncing }: BuddyAvatarProps) {
     <div 
       className={`buddy-avatar-container ${isBouncing ? 'bounce-once' : ''}`}
       onClick={onClick}
+      onContextMenu={onContextMenu}
       style={{
         cursor: 'pointer',
         width: '45px',

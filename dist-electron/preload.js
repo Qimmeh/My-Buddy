@@ -5,6 +5,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	onProactiveMessage: (callback) => ipcRenderer.on("proactive-message", (_event, value) => callback(value)),
 	onAiStateChange: (callback) => ipcRenderer.on("ai-state-change", (_event, value) => callback(value)),
 	sendToOllama: (prompt) => ipcRenderer.invoke("send-to-ollama", prompt),
+	addManualMemory: (memory) => ipcRenderer.send("add-manual-memory", memory),
+	saveSpotifyConfig: (id, secret) => ipcRenderer.send("save-spotify-config", id, secret),
+	getSpotifyConfig: () => ipcRenderer.invoke("get-spotify-config"),
+	authenticateSpotify: () => ipcRenderer.send("authenticate-spotify"),
+	setIgnoreMouseEvents: (ignore) => ipcRenderer.send("set-ignore-mouse-events", ignore),
 	quitApp: () => ipcRenderer.send("quit-app")
 });
 //#endregion

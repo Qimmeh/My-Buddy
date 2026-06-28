@@ -51,3 +51,19 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
+
+/* Custom Scrollbar for Settings Menu */
+.scrollable-menu::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollable-menu::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+.scrollable-menu::-webkit-scrollbar-thumb {
+  background: var(--neon-purple);
+  border-radius: 4px;
+}
+.scrollable-menu::-webkit-scrollbar-thumb:hover {
+  background: #c75cff;
+}

@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 import { startRamGuard } from './ramGuard.js'
 import { startAiService } from './aiService.js'
+import { saveSpotifyConfig, authenticateSpotify, loadSpotifyConfig } from './spotifyService.js'
+
+// Load spotify config on boot
+loadSpotifyConfig()
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const preload = join(__dirname, 'preload.js')
@@ -88,14 +92,14 @@ function positionWindow() {
   
   const display = screen.getPrimaryDisplay()
   const winBounds = win.getBounds()
-
-  // Calculate position: bottom left, slightly offset from the absolute edge
-  const x = display.bounds.x + 20
-  const y = display.bounds.y + display.bounds.height - winBounds.height
+  // Position it at absolute bottom left. 
+  // (The previous unclickable bug was solved by 'screen-saver' z-index, not by avoiding the taskbar)
+  const x = Math.round(display.bounds.x + 20)
+  const y = Math.round(display.bounds.y + display.bounds.height - winBounds.height)
 
   win.setPosition(x, y, false)
-  // Ensure it stays above normal windows but below full-screen games
-  win.setAlwaysOnTop(true, 'normal')
+  // 'screen-saver' is the highest level on Windows and prevents the window from dropping behind others on blur
+  win.setAlwaysOnTop(true, 'screen-saver')
 }
 
 app.whenReady().then(() => {
@@ -128,4 +132,30 @@ app.on('will-quit', () => {
 
 ipcMain.on('quit-app', () => {
   app.exit()
+})
+
+ipcMain.on('save-spotify-config', (event, id: string, secret: string) => {
+  saveSpotifyConfig(id, secret)
+})
+
+ipcMain.handle('get-spotify-config', async () => {
+  return loadSpotifyConfig()
+})
+
+ipcMain.on('authenticate-spotify', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win) {
+    authenticateSpotify(win).catch(console.error)
+  }
+})
+
+ipcMain.on('set-ignore-mouse-events', (event, ignore: boolean) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win) {
+    if (ignore) {
+      win.setIgnoreMouseEvents(true, { forward: true })
+    } else {
+      win.setIgnoreMouseEvents(false)
+    }
+  }
 })
