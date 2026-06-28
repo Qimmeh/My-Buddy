@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('ram-guard-status', (_event, value) => callback(value)),
   onProactiveMessage: (callback: (message: string) => void) =>
     ipcRenderer.on('proactive-message', (_event, value) => callback(value)),
+  onAiStateChange: (callback: (state: 1 | 2 | 3 | 4) => void) =>
+    ipcRenderer.on('ai-state-change', (_event, value) => callback(value)),
   sendToOllama: (prompt: string) => ipcRenderer.invoke('send-to-ollama', prompt),
   quitApp: () => ipcRenderer.send('quit-app'),
 })
