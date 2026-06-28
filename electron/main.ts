@@ -9,6 +9,10 @@ import { saveSpotifyConfig, authenticateSpotify, loadSpotifyConfig } from './spo
 // Load spotify config on boot
 loadSpotifyConfig()
 
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows', 'true')
+app.commandLine.appendSwitch('disable-renderer-backgrounding', 'true')
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
+
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const preload = join(__dirname, 'preload.js')
 
@@ -30,6 +34,7 @@ function createWindow() {
       preload,
       nodeIntegration: true,
       contextIsolation: true,
+      backgroundThrottling: false
     },
   })
 
@@ -80,33 +85,43 @@ function toggleWindow() {
   if (win.isVisible()) {
     win.hide()
   } else {
-    positionWindow()
+    // Show in avatar mode by default, the renderer will resize if chat is open
     win.show()
-    // It's a buddy widget, we don't necessarily want it to steal focus from what you're doing
-    // unless you interact with it. So we don't win.focus() on toggle, just show it.
   }
 }
 
-function positionWindow() {
-  if (!win) return
-  
+ipcMain.on('resize-window', (event, mode: 'avatar' | 'full') => {
+  if (!win || win.isDestroyed()) return
   const display = screen.getPrimaryDisplay()
-  const winBounds = win.getBounds()
-  // Position it at absolute bottom left. 
-  // (The previous unclickable bug was solved by 'screen-saver' z-index, not by avoiding the taskbar)
-  const x = Math.round(display.bounds.x + 20)
-  const y = Math.round(display.bounds.y + display.bounds.height - winBounds.height)
-
-  win.setPosition(x, y, false)
-  // 'screen-saver' is the highest level on Windows and prevents the window from dropping behind others on blur
-  win.setAlwaysOnTop(true, 'screen-saver')
-}
+  const bounds = display.bounds
+  
+  const { workArea } = display
+  
+  if (mode === 'avatar') {
+    const x = Math.round(workArea.x + 148)
+    const y = Math.round(workArea.y + workArea.height - 45)
+    win.setBounds({ x, y, width: 45, height: 45 })
+  } else {
+    const x = Math.round(workArea.x + 20)
+    const y = Math.round(workArea.y + workArea.height - 400)
+    win.setBounds({ x, y, width: 300, height: 400 })
+  }
+})
 
 app.whenReady().then(() => {
   createWindow()
   createTray()
-
-  positionWindow()
+  
+  // Set initial bounds to avatar mode
+  if (win) {
+    const display = screen.getPrimaryDisplay()
+    const { workArea } = display
+    const x = Math.round(workArea.x + 148)
+    const y = Math.round(workArea.y + workArea.height - 45)
+    win.setBounds({ x, y, width: 45, height: 45 })
+    win.setAlwaysOnTop(true, 'screen-saver')
+  }
+  
   win?.show()
 
   globalShortcut.register('CommandOrControl+Shift+Space', () => {
@@ -146,16 +161,5 @@ ipcMain.on('authenticate-spotify', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender)
   if (win) {
     authenticateSpotify(win).catch(console.error)
-  }
-})
-
-ipcMain.on('set-ignore-mouse-events', (event, ignore: boolean) => {
-  const win = BrowserWindow.fromWebContents(event.sender)
-  if (win) {
-    if (ignore) {
-      win.setIgnoreMouseEvents(true, { forward: true })
-    } else {
-      win.setIgnoreMouseEvents(false)
-    }
   }
 })

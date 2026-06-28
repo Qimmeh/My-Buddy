@@ -61,18 +61,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      const el = document.elementFromPoint(e.clientX, e.clientY);
-      // If the element is the root or the app-container, we are hovering over empty transparent space.
-      const isInteractive = el && el.id !== 'root' && el.tagName !== 'HTML' && el.tagName !== 'BODY' && !(el as HTMLElement).className.includes('app-container');
-      if (window.electronAPI.setIgnoreMouseEvents) {
-        window.electronAPI.setIgnoreMouseEvents(!isInteractive);
+    if (window.electronAPI.resizeWindow) {
+      if (chatVisible || settingsVisible || inputVisible) {
+        window.electronAPI.resizeWindow('full');
+      } else {
+        window.electronAPI.resizeWindow('avatar');
       }
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, []);
+    }
+  }, [chatVisible, settingsVisible, inputVisible]);
 
   const handleAvatarClick = () => {
     // Hide settings if open
@@ -124,8 +120,6 @@ function App() {
       alignItems: 'center',
       position: 'relative'
     }}>
-      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '40px', WebkitAppRegion: 'drag' }} />
-
       <SettingsMenu
         isVisible={settingsVisible}
         onClose={() => setSettingsVisible(false)}

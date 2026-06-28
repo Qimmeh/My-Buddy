@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	saveSpotifyConfig: (id, secret) => ipcRenderer.send("save-spotify-config", id, secret),
 	getSpotifyConfig: () => ipcRenderer.invoke("get-spotify-config"),
 	authenticateSpotify: () => ipcRenderer.send("authenticate-spotify"),
-	setIgnoreMouseEvents: (ignore) => ipcRenderer.send("set-ignore-mouse-events", ignore),
+	resizeWindow: (mode) => ipcRenderer.send("resize-window", mode),
 	quitApp: () => ipcRenderer.send("quit-app")
 });
 //#endregion

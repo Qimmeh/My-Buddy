@@ -118,6 +118,7 @@ export function startAiService(win: BrowserWindow) {
     if (spotifyMatch) {
       const query = spotifyMatch[1].trim()
       finalResponse = finalResponse.replace(spotifyMatch[0], '').trim()
+      if (!finalResponse) finalResponse = `Playing ${query} on Spotify!`
       playSpotifyQuery(query, win)
       memory.push({ role: 'system', content: `System action executed: Searching and playing Spotify for ${query}` })
     }
@@ -125,6 +126,7 @@ export function startAiService(win: BrowserWindow) {
     if (rememberMatch) {
       const fact = rememberMatch[1].trim()
       finalResponse = finalResponse.replace(rememberMatch[0], '').trim()
+      if (!finalResponse) finalResponse = `Got it, I'll remember that!`
       memoryBox.push(fact)
       saveMemory()
       memory.push({ role: 'system', content: `System action executed: Saved "${fact}" to long term memory.` })

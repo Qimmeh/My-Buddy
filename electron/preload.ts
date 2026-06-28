@@ -12,6 +12,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveSpotifyConfig: (id: string, secret: string) => ipcRenderer.send('save-spotify-config', id, secret),
   getSpotifyConfig: () => ipcRenderer.invoke('get-spotify-config'),
   authenticateSpotify: () => ipcRenderer.send('authenticate-spotify'),
-  setIgnoreMouseEvents: (ignore: boolean) => ipcRenderer.send('set-ignore-mouse-events', ignore),
+  resizeWindow: (mode: 'avatar' | 'full') => ipcRenderer.send('resize-window', mode),
   quitApp: () => ipcRenderer.send('quit-app'),
 })

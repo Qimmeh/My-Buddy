@@ -384,6 +384,7 @@ function startAiService(win) {
 		if (spotifyMatch) {
 			const query = spotifyMatch[1].trim();
 			finalResponse = finalResponse.replace(spotifyMatch[0], "").trim();
+			if (!finalResponse) finalResponse = `Playing ${query} on Spotify!`;
 			playSpotifyQuery(query, win);
 			memory.push({
 				role: "system",
@@ -393,6 +394,7 @@ function startAiService(win) {
 		if (rememberMatch) {
 			const fact = rememberMatch[1].trim();
 			finalResponse = finalResponse.replace(rememberMatch[0], "").trim();
+			if (!finalResponse) finalResponse = `Got it, I'll remember that!`;
 			memoryBox.push(fact);
 			saveMemory();
 			memory.push({
@@ -444,6 +446,9 @@ async function generateOllamaChat() {
 //#endregion
 //#region electron/main.ts
 loadSpotifyConfig();
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows", "true");
+app.commandLine.appendSwitch("disable-renderer-backgrounding", "true");
+app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
 var __dirname = dirname(fileURLToPath(import.meta.url));
 var preload = join(__dirname, "preload.js");
 var win = null;
@@ -462,7 +467,8 @@ function createWindow() {
 		webPreferences: {
 			preload,
 			nodeIntegration: true,
-			contextIsolation: true
+			contextIsolation: true,
+			backgroundThrottling: false
 		}
 	});
 	if (process.env.VITE_DEV_SERVER_URL) win.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -498,24 +504,48 @@ function createTray() {
 function toggleWindow() {
 	if (!win) return;
 	if (win.isVisible()) win.hide();
-	else {
-		positionWindow();
-		win.show();
-	}
+	else win.show();
 }
-function positionWindow() {
-	if (!win) return;
+ipcMain.on("resize-window", (event, mode) => {
+	if (!win || win.isDestroyed()) return;
 	const display = screen.getPrimaryDisplay();
-	const winBounds = win.getBounds();
-	const x = Math.round(display.bounds.x + 20);
-	const y = Math.round(display.bounds.y + display.bounds.height - winBounds.height);
-	win.setPosition(x, y, false);
-	win.setAlwaysOnTop(true, "screen-saver");
-}
+	display.bounds;
+	const { workArea } = display;
+	if (mode === "avatar") {
+		const x = Math.round(workArea.x + 148);
+		const y = Math.round(workArea.y + workArea.height - 45);
+		win.setBounds({
+			x,
+			y,
+			width: 45,
+			height: 45
+		});
+	} else {
+		const x = Math.round(workArea.x + 20);
+		const y = Math.round(workArea.y + workArea.height - 400);
+		win.setBounds({
+			x,
+			y,
+			width: 300,
+			height: 400
+		});
+	}
+});
 app.whenReady().then(() => {
 	createWindow();
 	createTray();
-	positionWindow();
+	if (win) {
+		const { workArea } = screen.getPrimaryDisplay();
+		const x = Math.round(workArea.x + 148);
+		const y = Math.round(workArea.y + workArea.height - 45);
+		win.setBounds({
+			x,
+			y,
+			width: 45,
+			height: 45
+		});
+		win.setAlwaysOnTop(true, "screen-saver");
+	}
 	win?.show();
 	globalShortcut.register("CommandOrControl+Shift+Space", () => {
 		toggleWindow();
@@ -542,11 +572,6 @@ ipcMain.handle("get-spotify-config", async () => {
 ipcMain.on("authenticate-spotify", (event) => {
 	const win = BrowserWindow.fromWebContents(event.sender);
 	if (win) authenticateSpotify(win).catch(console.error);
-});
-ipcMain.on("set-ignore-mouse-events", (event, ignore) => {
-	const win = BrowserWindow.fromWebContents(event.sender);
-	if (win) if (ignore) win.setIgnoreMouseEvents(true, { forward: true });
-	else win.setIgnoreMouseEvents(false);
 });
 //#endregion
 export {};
