@@ -28,4 +28,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveGeneratedAvatarSet: (images: Record<string, string>) => ipcRenderer.invoke('save-generated-avatar-set', images),
   onAvatarConfigUpdated: (callback: (config: Record<string, string>) => void) =>
     ipcRenderer.on('avatar-config-updated', (_event, value) => callback(value)),
+  sendMousePosition: (x: number, y: number) => ipcRenderer.send('mouse-position', x, y),
+  navigateToPoint: (x: number, y: number) => ipcRenderer.send('navigate-to-point', x, y),
+  onMicroAction: (callback: (action: string) => void) =>
+    ipcRenderer.on('micro-action', (_event, value) => callback(value)),
+  onMousePosition: (callback: (x: number, y: number) => void) =>
+    ipcRenderer.on('mouse-position', (_event, x, y) => callback(x, y)),
 })

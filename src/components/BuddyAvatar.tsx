@@ -1,12 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import idleImg from '../assets/Idle.png';
+import idleImg from '../assets/idle_v2.png';
 import activeImg from '../assets/active.png';
-import readyImg from '../assets/thinking.png';
-import thinkingImg from '../assets/veryactive.png';
+import veryActiveImg from '../assets/very_active.png';
+import readyImg from '../assets/ready.png';
+import thinkingImg from '../assets/thinking.png';
 import walkLeftImg from '../assets/walking_left.png';
-import walkRightImg from '../assets/walking_right.png';
+import walkLeft2Img from '../assets/walking_left_2.png';
+import walkRightImg from '../assets/walking_right_v2.png';
+import walkRight2Img from '../assets/walking_right_2_v3.png';
 import pausedImg from '../assets/paused.png';
-import angryDizzyImg from '../assets/angry_dizzy.png';
+import dizzyImg from '../assets/dizzy.png';
+import blinkImg from '../assets/blink.png';
+import glanceLeftImg from '../assets/glance_left.png';
+import glanceRightImg from '../assets/glance_right.png';
+import lookAroundImg from '../assets/look_around.png';
 
 interface BuddyAvatarProps {
   state: 'idle' | 'active' | 'ready' | 'thinking' | 'walking-left' | 'walking-right' | 'paused' | 'dizzy';
@@ -19,6 +26,7 @@ interface BuddyAvatarProps {
 }
 
 export function BuddyAvatar({ state, onClick, onContextMenu, isBouncing, onPointerDown, onPointerMove, onPointerUp }: BuddyAvatarProps) {
+  const [isHovered, setIsHovered] = useState(false);
   const [avatarConfig, setAvatarConfig] = useState<Record<string, string>>({});
   const [animFrame, setAnimFrame] = useState(0);
 
@@ -51,15 +59,19 @@ export function BuddyAvatar({ state, onClick, onContextMenu, isBouncing, onPoint
   const defaults: Record<string, string> = {
     'idle': idleImg,
     'active': activeImg,
+    'very-active': veryActiveImg,
     'ready': readyImg,
     'thinking': thinkingImg,
     'walking-left': walkLeftImg,
-    'walking-left-2': walkLeftImg, // fallback to normal walk if no frame 2
+    'walking-left-2': walkLeft2Img,
     'walking-right': walkRightImg,
-    'walking-right-2': walkRightImg, // fallback to normal walk if no frame 2
+    'walking-right-2': walkRight2Img,
     'paused': pausedImg,
-    'dizzy': angryDizzyImg,
-    'very-active': thinkingImg // fallback if very active not set
+    'dizzy': dizzyImg,
+    'blink': blinkImg,
+    'glance-left': glanceLeftImg,
+    'glance-right': glanceRightImg,
+    'look-around': lookAroundImg
   };
 
   const currentImage = avatarConfig[finalState] ? `file://${avatarConfig[finalState]}` : defaults[finalState] || idleImg;
@@ -72,6 +84,8 @@ export function BuddyAvatar({ state, onClick, onContextMenu, isBouncing, onPoint
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={{
         cursor: 'pointer',
         width: '45px',
@@ -83,6 +97,28 @@ export function BuddyAvatar({ state, onClick, onContextMenu, isBouncing, onPoint
         WebkitAppRegion: 'no-drag'
       } as React.CSSProperties}
     >
+      {isHovered && (
+          <div style={{
+            position: 'absolute',
+            bottom: '0',
+            left: '0',
+            right: '0',
+            background: 'rgba(10,5,20,0.8)',
+            borderBottomLeftRadius: '8px',
+            borderBottomRightRadius: '8px',
+            padding: '1px 6px',
+            fontSize: '0.5rem',
+            color: 'var(--neon-purple)',
+            textAlign: 'center',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            pointerEvents: 'none',
+            zIndex: 50
+          }}>
+            {state.replace(/-/g, ' ')}
+          </div>
+        )}
       <img 
         src={currentImage} 
         alt="Buddy Avatar" 
@@ -90,7 +126,10 @@ export function BuddyAvatar({ state, onClick, onContextMenu, isBouncing, onPoint
           maxWidth: '100%',
           maxHeight: '100%',
           objectFit: 'contain',
-          filter: 'drop-shadow(0px 0px 3px rgba(180, 80, 255, 0.5))'
+          filter: isHovered 
+            ? 'drop-shadow(0px 0px 8px rgba(180, 80, 255, 0.9)) brightness(1.15)' 
+            : 'drop-shadow(0px 0px 3px rgba(180, 80, 255, 0.5))',
+          transition: 'transform 0.3s ease, filter 0.2s ease'
         }}
         draggable="false"
       />

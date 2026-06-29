@@ -1,3 +1,7 @@
+.buddy-hovered {
+  filter: brightness(1.2) drop-shadow(0px 0px 8px rgba(180, 80, 255, 0.8)) !important;
+  transition: filter 0.2s ease;
+}
 :root {
   --neon-cyan: #0ff;
   --neon-purple: #b026ff;

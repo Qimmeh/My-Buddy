@@ -913,6 +913,14 @@ var SIZE = 45;
 var currentMode = "avatar";
 var lastSendState = "";
 var isGrabbed = false;
+var microActionTimer = 0;
+var moodTimer = 0;
+var lastInteractionTime = Date.now();
+var mood = "neutral";
+var mouseNearby = false;
+function sendMicroAction(action) {
+	if (win && !win.isDestroyed()) win.webContents.send("micro-action", action);
+}
 function sendState(state) {
 	if (win && !win.isDestroyed() && lastSendState !== state) {
 		lastSendState = state;
@@ -946,10 +954,26 @@ function startPhysicsLoop() {
 				vy = 0;
 				idleFrames++;
 				if (idleFrames > 1800) pickNewTarget(wa);
+				microActionTimer++;
+				if (microActionTimer > 200 + Math.random() * 300) {
+					microActionTimer = 0;
+					const r = Math.random();
+					if (r < .25) sendMicroAction("blink");
+					else if (r < .5) sendMicroAction(Math.random() > .5 ? "glance-left" : "glance-right");
+					else if (r < .75) sendMicroAction("look-around");
+					else sendMicroAction("bounce");
+				}
 			} else {
-				const speed = .8 + Math.random() * .4;
+				let baseSpeed = .8;
+				if (mood === "bouncy") baseSpeed = 1.5 + Math.random() * .5;
+				else if (mood === "happy") baseSpeed = 1 + Math.random() * .4;
+				else if (mood === "sleepy") baseSpeed = .5 + Math.random() * .3;
+				else baseSpeed = .8 + Math.random() * .4;
+				if (mouseNearby) baseSpeed *= 1.3;
+				const speed = baseSpeed;
 				vx = dx / dist * speed;
 				vy = dy / dist * speed + .15;
+				if (Math.random() < .002) sendMicroAction("bounce");
 			}
 			px += vx;
 			py += vy;
@@ -970,6 +994,18 @@ function startPhysicsLoop() {
 				py = wa.y;
 				vy = 1 + Math.random() * 1;
 				pickNewTarget(wa);
+			}
+			if (mood === "sleepy" && dist < 3 && Math.random() < 5e-4) sendMicroAction("bounce");
+			moodTimer++;
+			if (moodTimer > 600) {
+				moodTimer = 0;
+				const elapsed = Date.now() - lastInteractionTime;
+				if (elapsed < 3e4) mood = "bouncy";
+				else if (elapsed < 12e4) mood = "happy";
+				else if (elapsed < 3e5) mood = "neutral";
+				else mood = "sleepy";
+				const hour = (/* @__PURE__ */ new Date()).getHours();
+				if (hour >= 22 || hour < 7) mood = "sleepy";
 			}
 			px = Math.max(wa.x, Math.min(px, wa.x + wa.width - SIZE));
 			py = Math.max(wa.y, Math.min(py, wa.y + wa.height - SIZE));
@@ -1041,6 +1077,7 @@ ipcMain.on("resize-window", (_event, mode) => {
 	currentMode = mode;
 	if (mode === "avatar") {
 		isGrabbed = false;
+		lastInteractionTime = Date.now();
 		pickNewTarget(screen.getPrimaryDisplay().workArea);
 	} else {
 		const { workArea } = screen.getDisplayNearestPoint({
@@ -1077,6 +1114,7 @@ ipcMain.on("drag-window", (_event, dx, dy) => {
 ipcMain.on("end-drag", (_event, _dragVx, _dragVy, wasDragged) => {
 	if (currentMode === "avatar") {
 		isGrabbed = false;
+		lastInteractionTime = Date.now();
 		if (wasDragged) {
 			vx = Math.max(-20, Math.min(20, _dragVx));
 			vy = _dragVy - 5;
@@ -1090,6 +1128,17 @@ ipcMain.on("end-drag", (_event, _dragVx, _dragVy, wasDragged) => {
 ipcMain.on("set-ignore-mouse-events", (_event, ignore, options) => {
 	if (win && !win.isDestroyed()) if (options) win.setIgnoreMouseEvents(ignore, options);
 	else win.setIgnoreMouseEvents(ignore);
+});
+ipcMain.on("mouse-position", (_event, x, y) => {
+	mouseNearby = Math.abs(x) < 100 && Math.abs(y) < 100;
+	if (mouseNearby) lastInteractionTime = Date.now();
+});
+ipcMain.on("navigate-to-point", (_event, x, y) => {
+	if (currentMode !== "avatar") return;
+	const area = screen.getPrimaryDisplay().workArea;
+	targetX = Math.max(area.x + SIZE, Math.min(x, area.x + area.width - SIZE));
+	targetY = Math.max(area.y + SIZE, Math.min(y, area.y + area.height - SIZE));
+	idleFrames = 0;
 });
 app.whenReady().then(() => {
 	createWindow();

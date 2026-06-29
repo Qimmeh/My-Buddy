@@ -6,18 +6,80 @@ import { SettingsMenu } from './components/SettingsMenu';
 import './index.css';
 
 function App() {
-  const [state, setState] = useState<'idle' | 'active' | 'ready' | 'thinking' | 'walking-left' | 'walking-right' | 'paused' | 'dizzy'>('ready');
+  const [state, setState] = useState<'idle' | 'active' | 'ready' | 'thinking' | 'walking-left' | 'walking-right' | 'paused' | 'dizzy' | 'blink' | 'glance-left' | 'glance-right' | 'look-around'>('ready');
   const [chatVisible, setChatVisible] = useState(false);
   const [inputVisible, setInputVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [lastMessage, setLastMessage] = useState("Hello! I'm here.");
   const [isBouncing, setIsBouncing] = useState(false);
+  const animationLock = useRef<string | null>(null);
+
+  // Alt+Click to navigate buddy to a point
+  useEffect(() => {
+    const handleAltClick = (e: MouseEvent) => {
+      if (e.altKey && window.electronAPI.navigateToPoint) {
+        window.electronAPI.navigateToPoint(e.screenX, e.screenY);
+      }
+    };
+    window.addEventListener('click', handleAltClick);
+    return () => window.removeEventListener('click', handleAltClick);
+  }, []);
+
+  // Listen for micro-actions (blink, glance, bounce, etc.)
+  useEffect(() => {
+    if (window.electronAPI.onMicroAction) {
+      window.electronAPI.onMicroAction((action) => {
+        if (action === 'bounce') {
+          setIsBouncing(true);
+          setTimeout(() => setIsBouncing(false), 500);
+          return;
+        }
+        // Lock physics loop from overriding during micro-animation
+        if (action === 'blink') {
+          setState('blink');
+          animationLock.current = 'blink';
+          setTimeout(() => {
+            animationLock.current = null;
+            setState('idle');
+          }, 200);
+        } else if (action === 'glance-left') {
+          setState('glance-left');
+          animationLock.current = 'glance-left';
+          setTimeout(() => {
+            animationLock.current = null;
+            setState('idle');
+          }, 400);
+        } else if (action === 'glance-right') {
+          setState('glance-right');
+          animationLock.current = 'glance-right';
+          setTimeout(() => {
+            animationLock.current = null;
+            setState('idle');
+          }, 400);
+        } else if (action === 'look-around') {
+          setState('look-around');
+          animationLock.current = 'look-around';
+          setTimeout(() => {
+            setState('glance-left');
+            animationLock.current = 'look-around';
+            setTimeout(() => {
+              animationLock.current = null;
+              setState('idle');
+            }, 400);
+          }, 300);
+        }
+      });
+    }
+  }, []);
 
   useEffect(() => {
     // Listen for AI state changes from main process if implemented
     if (window.electronAPI.onAiStateChange) {
       window.electronAPI.onAiStateChange((newState: string) => {
-        setState(newState as any);
+        // Don't override micro-animations
+        if (!animationLock.current) {
+          setState(newState as any);
+        }
       });
     }
 
@@ -70,17 +132,30 @@ function App() {
     }
   }, [chatVisible, settingsVisible, inputVisible]);
 
+
   const [isDragging, setIsDragging] = useState(false);
-  const dragInfo = useRef({ startX: 0, startY: 0, isDragged: false, lastX: 0, lastY: 0, lastTime: 0, vx: 0, vy: 0 });
+  const dragInfo = useRef({ startX: 0, startY: 0, isDragged: false, lastX: 0, lastY: 0, lastTime: 0, vx: 0, vy: 0, petTimer: null as any });
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.target instanceof Element) {
       e.target.setPointerCapture(e.pointerId);
     }
-    dragInfo.current = { 
+    // Start pet timer (cancelled if moved more than 5px)
+    const petTimerId = setTimeout(() => {
+      if (!dragInfo.current.isDragged) {
+        setIsBouncing(true);
+        setState('active');
+        setTimeout(() => {
+          setIsBouncing(false);
+          setState('idle');
+        }, 600);
+      }
+    }, 400);
+    dragInfo.current = {
       startX: e.screenX, 
       startY: e.screenY, 
       isDragged: false,
+      petTimer: petTimerId,
       lastX: e.screenX,
       lastY: e.screenY,
       lastTime: performance.now(),
@@ -119,6 +194,7 @@ function App() {
 
   const handlePointerUp = (_e: React.PointerEvent) => {
     setIsDragging(false);
+    if (dragInfo.current.petTimer) clearTimeout(dragInfo.current.petTimer);
     if (window.electronAPI.endDrag) {
       if (dragInfo.current.isDragged) {
         // Clamp velocity so she doesn't break the sound barrier if dt was 1ms

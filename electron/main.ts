@@ -29,6 +29,19 @@ let currentMode = 'avatar'
 let lastSendState = ''
 let isGrabbed = false
 
+// Alive behaviors
+let microActionTimer = 0
+let moodTimer = 0
+let lastInteractionTime = Date.now()
+let mood = 'neutral'
+let mouseNearby = false
+
+function sendMicroAction(action) {
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('micro-action', action)
+  }
+}
+
 function sendState(state) {
   if (win && !win.isDestroyed() && lastSendState !== state) {
     lastSendState = state
@@ -72,11 +85,28 @@ function startPhysicsLoop() {
        vy = 0
        idleFrames++
        if (idleFrames > 1800) pickNewTarget(wa)
+          microActionTimer++
+          if (microActionTimer > 200 + Math.random() * 300) {
+            microActionTimer = 0
+            const r = Math.random()
+            if (r < 0.25) sendMicroAction('blink')
+            else if (r < 0.5) sendMicroAction(Math.random() > 0.5 ? 'glance-left' : 'glance-right')
+            else if (r < 0.75) sendMicroAction('look-around')
+            else sendMicroAction('bounce')
+          }
       } else {
         // Walk toward target with organic speed
-        const speed = 0.8 + Math.random() * 0.4
+        // Mood-based speed
+        let baseSpeed = 0.8
+        if (mood === 'bouncy') baseSpeed = 1.5 + Math.random() * 0.5
+        else if (mood === 'happy') baseSpeed = 1.0 + Math.random() * 0.4
+        else if (mood === 'sleepy') baseSpeed = 0.5 + Math.random() * 0.3
+        else baseSpeed = 0.8 + Math.random() * 0.4
+        if (mouseNearby) baseSpeed *= 1.3
+        const speed = baseSpeed
         vx = (dx / dist) * speed
         vy = (dy / dist) * speed + 0.15
+        if (Math.random() < 0.002) sendMicroAction('bounce')
       }
 
       // Integrate position
@@ -109,7 +139,25 @@ function startPhysicsLoop() {
         pickNewTarget(wa)
       }
 
-      // Hard safety clamp - never let position escape bounds
+      // Attention-seeking when ignored
+      if (mood === 'sleepy' && dist < 3 && Math.random() < 0.0005) {
+        sendMicroAction('bounce');
+      }
+
+      // Mood system
+      moodTimer++
+      if (moodTimer > 600) {
+        moodTimer = 0
+        const elapsed = Date.now() - lastInteractionTime
+        if (elapsed < 30000) mood = 'bouncy'
+        else if (elapsed < 120000) mood = 'happy'
+        else if (elapsed < 300000) mood = 'neutral'
+        else mood = 'sleepy'
+        const hour = new Date().getHours()
+        if (hour >= 22 || hour < 7) mood = 'sleepy'
+      }
+
+      // Hard safety clamp
       px = Math.max(wa.x, Math.min(px, wa.x + wa.width - SIZE))
       py = Math.max(wa.y, Math.min(py, wa.y + wa.height - SIZE))
 
@@ -179,6 +227,7 @@ ipcMain.on('resize-window', (_event, mode) => {
   currentMode = mode
   if (mode === 'avatar') {
     isGrabbed = false
+    lastInteractionTime = Date.now()
     const display = screen.getPrimaryDisplay()
     pickNewTarget(display.workArea)
     // Physics loop handles position/size on next tick
@@ -206,6 +255,7 @@ ipcMain.on('drag-window', (_event, dx, dy) => {
 ipcMain.on('end-drag', (_event, _dragVx, _dragVy, wasDragged) => {
   if (currentMode === 'avatar') {
     isGrabbed = false
+    lastInteractionTime = Date.now()
     if (wasDragged) {
       // When thrown, add upward velocity and let gravity pull it down
       vx = Math.max(-20, Math.min(20, _dragVx))
@@ -225,6 +275,20 @@ ipcMain.on('set-ignore-mouse-events', (_event, ignore, options) => {
     if (options) win.setIgnoreMouseEvents(ignore, options)
     else win.setIgnoreMouseEvents(ignore)
   }
+})
+
+ipcMain.on('mouse-position', (_event, x, y) => {
+  mouseNearby = Math.abs(x) < 100 && Math.abs(y) < 100
+  if (mouseNearby) lastInteractionTime = Date.now()
+})
+
+ipcMain.on('navigate-to-point', (_event, x, y) => {
+  if (currentMode !== 'avatar') return;
+  const display = screen.getPrimaryDisplay()
+  const area = display.workArea
+  targetX = Math.max(area.x + SIZE, Math.min(x, area.x + area.width - SIZE));
+  targetY = Math.max(area.y + SIZE, Math.min(y, area.y + area.height - SIZE));
+  idleFrames = 0;
 })
 
 app.whenReady().then(() => {

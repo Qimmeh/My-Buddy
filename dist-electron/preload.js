@@ -21,7 +21,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	selectAvatarImage: (state) => ipcRenderer.invoke("select-avatar-image", state),
 	resetAvatarImage: (state) => ipcRenderer.invoke("reset-avatar-image", state),
 	saveGeneratedAvatarSet: (images) => ipcRenderer.invoke("save-generated-avatar-set", images),
-	onAvatarConfigUpdated: (callback) => ipcRenderer.on("avatar-config-updated", (_event, value) => callback(value))
+	onAvatarConfigUpdated: (callback) => ipcRenderer.on("avatar-config-updated", (_event, value) => callback(value)),
+	sendMousePosition: (x, y) => ipcRenderer.send("mouse-position", x, y),
+	navigateToPoint: (x, y) => ipcRenderer.send("navigate-to-point", x, y),
+	onMicroAction: (callback) => ipcRenderer.on("micro-action", (_event, value) => callback(value)),
+	onMousePosition: (callback) => ipcRenderer.on("mouse-position", (_event, x, y) => callback(x, y))
 });
 //#endregion
 export {};
