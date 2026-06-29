@@ -22,3 +22,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Build output
+dist_app
+dist_app2
+
+# User data created during development
+memory_store.json
+
+# Installers
+*.exe

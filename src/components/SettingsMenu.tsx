@@ -28,7 +28,7 @@ interface SettingsMenuProps {
 
 type MemoryTab = 'songs' | 'playlists' | 'facts' | null;
 
-export function SettingsMenu({ isVisible, onClose }: SettingsMenuProps) {
+export function SettingsMenu({ isVisible, onClose, onTrayIconUpdate }: SettingsMenuProps) {
   const [memoryInput, setMemoryInput] = useState('');
   const [spotifyId, setSpotifyId] = useState('');
   const [spotifySecret, setSpotifySecret] = useState('');
@@ -39,7 +39,10 @@ export function SettingsMenu({ isVisible, onClose }: SettingsMenuProps) {
   const [avatarConfig, setAvatarConfig] = useState<Record<string, string>>({});
   const [previewIndex, setPreviewIndex] = useState(0);
   const [previewAutoPlay, setPreviewAutoPlay] = useState(false);
-  const avatarStates = ['idle', 'active', 'very-active', 'ready', 'thinking', 'walking-left', 'walking-left-2', 'walking-right', 'walking-right-2', 'paused', 'dizzy', 'blink', 'glance-left', 'glance-right', 'look-around'];
+  const [marketplaceBundles, setMarketplaceBundles] = useState<any[]>([]);
+ const [marketplaceLoading, setMarketplaceLoading] = useState(false);
+ const avatarStates = ['idle', 'active', 'very-active', 'ready', 'thinking', 'walking-left', 'walking-left-2', 'walking-right', 'walking-right-2', 'paused', 'dizzy', 'blink', 'glance-left', 'glance-right', 'look-around'];
+  const [userName, setUserName] = useState('');
   const defaults: Record<string, string> = {
     'idle': idleImg,
     'active': activeImg,
@@ -105,6 +108,13 @@ export function SettingsMenu({ isVisible, onClose }: SettingsMenuProps) {
     reader.readAsDataURL(file);
   };
 
+  // Load marketplace bundles when view opens
+  useEffect(() => {
+    if (currentView !== 'marketplace' || !window.electronAPI.listBundles) return;
+    setMarketplaceLoading(true);
+    window.electronAPI.listBundles().then(setMarketplaceBundles).catch(console.error).finally(() => setMarketplaceLoading(false));
+  }, [currentView]);
+
   // Auto-play preview
   useEffect(() => {
     if (!previewAutoPlay) return;
@@ -129,10 +139,23 @@ export function SettingsMenu({ isVisible, onClose }: SettingsMenuProps) {
       }
       // Load avatar config
       if (window.electronAPI.getAvatarConfig) {
-        window.electronAPI.getAvatarConfig().then(setAvatarConfig).catch(console.error);
+        window.electronAPI.getAvatarConfig().then((config) => {
+          setAvatarConfig(config);
+          if (config['idle']) {
+            onTrayIconUpdate?.(config['idle']);
+          }
+        }).catch(console.error);
         window.electronAPI.onAvatarConfigUpdated((config) => {
           setAvatarConfig(config);
+          // Update tray icon when idle avatar changes
+          if (config['idle']) {
+            onTrayIconUpdate?.(config['idle']);
+          }
         });
+      }
+      // Load user name
+      if (window.electronAPI.getUserName) {
+        window.electronAPI.getUserName().then(setUserName).catch(console.error);
       }
     }
   }, [isVisible]);
@@ -231,7 +254,34 @@ export function SettingsMenu({ isVisible, onClose }: SettingsMenuProps) {
       {currentView === 'main' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
 
-        {/* ===== Memory Overview ===== */}
+       {/* ===== Memory Overview ===== */}
+        {/* Your Name */}
+        <div>
+          <strong style={{ fontSize: '0.85rem' }}>Your Name</strong>
+          <input
+            value={userName}
+            onChange={(e) => {
+              setUserName(e.target.value);
+              if (window.electronAPI.setUserName) {
+                window.electronAPI.setUserName(e.target.value || 'Buddy');
+              }
+            }}
+            placeholder="Enter your name..."
+            style={{
+              width: '100%',
+              marginTop: '4px',
+              padding: '6px 8px',
+              borderRadius: '6px',
+              border: '1px solid #333',
+              background: '#1a1a2e',
+              color: '#e0e0ff',
+              fontSize: '0.8rem',
+              outline: 'none',
+              boxSizing: 'border-box'
+            }}
+          />
+        </div>
+
         <div>
           <strong>Memory Overview</strong>
           <p style={{ margin: '4px 0 6px 0', fontSize: '0.8rem', color: '#ccc' }}>
@@ -530,6 +580,41 @@ export function SettingsMenu({ isVisible, onClose }: SettingsMenuProps) {
 
           <hr style={sectionDivider} />
 
+          {/* ==== Avatar Marketplace ==== */}
+          <div>
+            <strong>Marketplace</strong>
+            <p style={{ margin: '4px 0 8px 0', fontSize: '0.75rem', color: '#ccc' }}>
+              Share or download avatar bundles!
+            </p>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                onClick={async () => {
+                  const name = 'Bundle ' + new Date().toLocaleDateString();
+                  const result = await window.electronAPI.createBundle(name, 'User', '');
+                  if (result.success) {
+                    alert('Bundle "' + name + '" uploaded to marketplace!');
+                    if (currentView === 'marketplace') {
+                      window.electronAPI.listBundles().then(setMarketplaceBundles);
+                    }
+                  } else {
+                    alert(result.error === 'DUPLICATE_BUNDLE' ? 'This exact avatar set is already bundled. Modify some images first!' : 'Error: ' + result.error);
+                  }
+                }}
+                style={{ ...btnStyle, flex: 1, fontSize: '0.7rem', background: 'rgba(50, 200, 100, 0.8)' }}
+              >
+                Upload to Marketplace
+              </button>
+              <button
+                onClick={() => { setCurrentView('marketplace'); }}
+                style={{ ...btnStyle, flex: 1, fontSize: '0.7rem', background: 'rgba(50, 150, 255, 0.8)' }}
+              >
+                Open Marketplace
+              </button>
+            </div>
+          </div>
+
+<hr style={sectionDivider} />
+
           {/* ==== Smart Walking Generator ==== */}
           <div>
             <strong>Smart Walking Generator</strong>
@@ -554,6 +639,65 @@ export function SettingsMenu({ isVisible, onClose }: SettingsMenuProps) {
             </div>
           </div>
 
+          <hr style={sectionDivider} />
+
+                  </div>
+      )}
+
+      {currentView === 'marketplace' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+            <button onClick={() => setCurrentView('avatar')} style={{ ...btnStyle, background: 'rgba(255,255,255,0.1)' }}>
+              &larr; Back
+            </button>
+            <span style={{ fontSize: '0.75rem', color: '#888' }}>Avatar Marketplace</span>
+          </div>
+
+          <hr style={sectionDivider} />
+
+          {marketplaceLoading ? (
+            <div style={{ textAlign: 'center', padding: '20px', color: '#888', fontSize: '0.85rem' }}>
+              Loading bundles...
+            </div>
+          ) : marketplaceBundles.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '20px', color: '#888', fontSize: '0.85rem' }}>
+              No bundles available.<br />Create one from the Avatar Settings!
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {marketplaceBundles.map(bundle => (
+                <div key={bundle.id} style={{
+                  background: 'rgba(0,0,0,0.3)',
+                  borderRadius: '8px',
+                  padding: '10px',
+                  border: '1px solid rgba(180,38,255,0.2)'
+                }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>{bundle.name}</div>
+                  <div style={{ fontSize: '0.7rem', color: '#aaa', marginTop: '2px' }}>
+                    by {bundle.author} &middot; v{bundle.version}
+                  </div>
+                  {bundle.description && (
+                    <div style={{ fontSize: '0.7rem', color: '#888', marginTop: '2px' }}>{bundle.description}</div>
+                  )}
+                  <button
+                    onClick={async () => {
+                      try {
+                        const config = await window.electronAPI.installBundle(bundle.id);
+                        if (config) {
+                          alert('Bundle "' + bundle.name + '" installed!');
+                        }
+                      } catch (e) {
+                        alert('Install failed: ' + (e.message || 'unknown error'));
+                      }
+                    }}
+                    style={{ ...btnStyle, marginTop: '6px', fontSize: '0.7rem', padding: '3px 10px' }}
+                  >
+                    Install
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

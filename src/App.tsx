@@ -113,6 +113,17 @@ function App() {
     };
   }, [chatVisible, inputVisible, state, settingsVisible]);
 
+  // Listen for "Set Name" from tray menu
+  useEffect(() => {
+    if (window.electronAPI.onSetUserNamePrompt) {
+      window.electronAPI.onSetUserNamePrompt(() => {
+        setChatVisible(false);
+        setInputVisible(false);
+        setSettingsVisible(true);
+      });
+    }
+  }, []);
+
   useEffect(() => {
     const handleBlur = () => {
       setSettingsVisible(false);
@@ -264,6 +275,11 @@ function App() {
       <SettingsMenu
         isVisible={settingsVisible}
         onClose={() => setSettingsVisible(false)}
+        onTrayIconUpdate={(path: string) => {
+          if (window.electronAPI.updateTrayIcon) {
+            window.electronAPI.updateTrayIcon(path);
+          }
+        }}
       />
 
       <div style={{

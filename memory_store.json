@@ -22,7 +22,7 @@
       "name": "妳聽得到",
       "artist": "Jay Chou",
       "uri": "spotify:track:3ZsPujeG0eWb4o3VkrHKd5",
-      "count": 3
+      "count": 5
     },
     "spotify:track:3E8mVyS6bb9uLnlCVKstDI": {
       "name": "Nvmd",
@@ -263,6 +263,54 @@
       "artist": "洪一诺",
       "uri": "spotify:track:0Lfv4LQZ0kMN8AKbjlHGBk",
       "count": 3
+    },
+    "spotify:track:3LtpKP5abr2qqjunvjlX5i": {
+      "name": "Doja",
+      "artist": "Central Cee",
+      "uri": "spotify:track:3LtpKP5abr2qqjunvjlX5i",
+      "count": 2
+    },
+    "spotify:track:1sczjXEYHpbpCsaA25ZzPv": {
+      "name": "intentions",
+      "artist": "starfall",
+      "uri": "spotify:track:1sczjXEYHpbpCsaA25ZzPv",
+      "count": 1
+    },
+    "spotify:track:5kqIPrATaCc2LqxVWzQGbk": {
+      "name": "7 Years",
+      "artist": "Lukas Graham",
+      "uri": "spotify:track:5kqIPrATaCc2LqxVWzQGbk",
+      "count": 2
+    },
+    "spotify:track:6AI3ezQ4o3HUoP6Dhudph3": {
+      "name": "Not Like Us",
+      "artist": "Kendrick Lamar",
+      "uri": "spotify:track:6AI3ezQ4o3HUoP6Dhudph3",
+      "count": 3
+    },
+    "spotify:track:4iJyoBOLtHqaGxP12qzhQI": {
+      "name": "Peaches (feat. Daniel Caesar & Giveon)",
+      "artist": "Justin Bieber",
+      "uri": "spotify:track:4iJyoBOLtHqaGxP12qzhQI",
+      "count": 2
+    },
+    "spotify:track:42VsgItocQwOQC3XWZ8JNA": {
+      "name": "FE!N (feat. Playboi Carti)",
+      "artist": "Travis Scott",
+      "uri": "spotify:track:42VsgItocQwOQC3XWZ8JNA",
+      "count": 2
+    },
+    "spotify:track:3IqcBL5yjJK3ri0TGaL3MC": {
+      "name": "less of you",
+      "artist": "keshi",
+      "uri": "spotify:track:3IqcBL5yjJK3ri0TGaL3MC",
+      "count": 2
+    },
+    "spotify:track:65okMHrX31lksWRLOykgoe": {
+      "name": "Janice STFU",
+      "artist": "Drake",
+      "uri": "spotify:track:65okMHrX31lksWRLOykgoe",
+      "count": 1
     }
   },
   "playlists": [
@@ -272,6 +320,6 @@
     }
   ],
   "facts": [
-    "User is currently looking at: my-buddy"
+    "User is currently looking at: Codex"
   ]
 }

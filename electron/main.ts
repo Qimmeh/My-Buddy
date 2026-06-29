@@ -2,10 +2,12 @@ import { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, screen, native
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
+import { promises as fs } from 'node:fs'
 import { startRamGuard } from './ramGuard.js'
 import { startAiService } from './aiService.js'
-import { saveSpotifyConfig, authenticateSpotify, loadSpotifyConfig } from './spotifyService.js'
+import { saveSpotifyConfig, authenticateSpotify, loadSpotifyConfig, isSpotifyPlaying } from './spotifyService.js'
 import { getAvatarConfig, selectAndCopyAvatarImage, resetAvatarImage, saveGeneratedAvatarSet } from './avatarService.js'
+import { createBundle, installBundle, listBundles } from './avatarMarketplace.js'
 
 loadSpotifyConfig()
 
@@ -18,6 +20,10 @@ const preload = join(__dirname, 'preload.js')
 
 let win = null
 let tray = null
+
+// User name
+let userName = 'User'
+const USER_NAME_PATH = join(app.getPath('userData'), 'user-name.json')
 
 // Physics state
 let px = 0, py = 0
@@ -38,6 +44,7 @@ let mouseNearby = false
 let proactiveTimer = 0
 let greetingTimer = 0
 let hasGreeted = false
+let wasMusicPlaying = false
 
 const proactiveMessages = [
   "*stretches*",
@@ -68,6 +75,27 @@ function sendState(state) {
   if (win && !win.isDestroyed() && lastSendState !== state) {
     lastSendState = state
     win.webContents.send('ai-state-change', state)
+  }
+}
+
+async function loadUserName() {
+  try {
+    const data = await fs.readFile(USER_NAME_PATH, 'utf-8')
+    const parsed = JSON.parse(data)
+    if (parsed.name) userName = parsed.name
+  } catch { /* file doesn't exist yet */ }
+}
+
+async function saveUserName(name: string) {
+  userName = name
+  try {
+    await fs.writeFile(USER_NAME_PATH, JSON.stringify({ name }))
+  } catch (err) {
+    console.error('Failed to save user name:', err)
+  }
+  // Update tray tooltip
+  if (tray && !tray.isDestroyed()) {
+    tray.setToolTip(userName + ' Buddy')
   }
 }
 
@@ -161,16 +189,33 @@ function startPhysicsLoop() {
         pickNewTarget(wa)
       }
 
-      // Attention-seeking when ignored
-      if (mood === 'sleepy' && dist < 3 && Math.random() < 0.0005) {
-        sendMicroAction('bounce');
-      }
+     // Attention-seeking when ignored
+     if (mood === 'sleepy' && dist < 3 && Math.random() < 0.0005) {
+       sendMicroAction('bounce');
+     }
 
-      // Mood system
+      // Music awareness - boost mood when Spotify is playing
+      const musicPlaying = isSpotifyPlaying()
+      if (musicPlaying && !wasMusicPlaying) {
+        // Music just started! React with a bounce
+        sendMicroAction('bounce')
+        lastInteractionTime = Date.now()
+        if (win && !win.isDestroyed()) {
+          const reactions = ["*bops to the beat*", "*music makes me happy*", "*starts dancing*", "*feeling the rhythm*"]
+          win.webContents.send('proactive-message', reactions[Math.floor(Math.random() * reactions.length)])
+        }
+      } else if (!musicPlaying && wasMusicPlaying) {
+        // Music stopped
+        hasGreeted = false
+      }
+      wasMusicPlaying = musicPlaying
+
+     // Mood system
       moodTimer++
       if (moodTimer > 600) {
         moodTimer = 0
         const elapsed = Date.now() - lastInteractionTime
+        if (musicPlaying) { mood = 'bouncy'; return }
         if (elapsed < 30000) mood = 'bouncy'
         else if (elapsed < 120000) mood = 'happy'
         else if (elapsed < 300000) mood = 'neutral'
@@ -261,9 +306,15 @@ function createTray() {
   if (!process.env.VITE_DEV_SERVER_URL) iconPath = join(__dirname, '../dist/icon.png')
   const icon = nativeImage.createFromPath(iconPath).resize({ width: 24, height: 24 })
   tray = new Tray(icon)
-  tray.setToolTip('Zi Feng Buddy')
+    tray.setToolTip(userName + ' Buddy')
   tray.on('click', () => toggleWindow())
   const contextMenu = Menu.buildFromTemplate([
+    { label: 'Set Name...', click: () => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('set-user-name-prompt')
+      }
+    }},
+    { type: 'separator' },
     { label: 'Quit', click: () => { app.quit() } }
   ])
   tray.on('right-click', () => tray?.popUpContextMenu(contextMenu))
@@ -344,7 +395,8 @@ ipcMain.on('navigate-to-point', (_event, x, y) => {
   idleFrames = 0;
 })
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await loadUserName()
   createWindow()
   createTray()
   if (win) {
@@ -388,6 +440,56 @@ ipcMain.handle('select-avatar-image', async (event, state) => {
     return config
   }
   return null
+})
+
+// Marketplace IPCs
+ipcMain.handle('create-bundle', async (_event, name, author, description) => {
+  const config = await getAvatarConfig()
+  try {
+    const manifest = await createBundle(name, author, description, config)
+    return { success: true, manifest }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+})
+
+ipcMain.handle('install-bundle', async (_event, bundleId) => {
+  const config = await getAvatarConfig()
+  const newConfig = await installBundle(bundleId, config)
+  const { join } = await import('node:path')
+  const { promises: fs } = await import('node:fs')
+  const CONFIG_PATH = join(app.getPath('userData'), 'avatar-config.json')
+  await fs.writeFile(CONFIG_PATH, JSON.stringify(newConfig, null, 2))
+  return newConfig
+})
+
+ipcMain.handle('list-bundles', async () => {
+ return await listBundles()
+})
+
+// User name IPCs
+ipcMain.handle('get-user-name', async () => {
+  return userName
+})
+
+ipcMain.handle('set-user-name', async (_event, name) => {
+  await saveUserName(name)
+  return { success: true }
+})
+
+ipcMain.on('update-tray-icon', async (_event, imagePath) => {
+  if (!tray || tray.isDestroyed()) return
+  try {
+    const icon = nativeImage.createFromPath(imagePath).resize({ width: 24, height: 24 })
+    tray.setImage(icon)
+  } catch {
+    // Fall back to default icon if custom one fails
+    const iconPath = join(__dirname, '../dist/icon.png')
+    try {
+      const icon = nativeImage.createFromPath(iconPath).resize({ width: 24, height: 24 })
+      tray.setImage(icon)
+    } catch {}
+  }
 })
 
 ipcMain.handle('reset-avatar-image', async (event, state) => {

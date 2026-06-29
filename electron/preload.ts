@@ -34,4 +34,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('micro-action', (_event, value) => callback(value)),
   onMousePosition: (callback: (x: number, y: number) => void) =>
     ipcRenderer.on('mouse-position', (_event, x, y) => callback(x, y)),
+
+  // Marketplace
+  createBundle: (name: string, author: string, description: string) => ipcRenderer.invoke('create-bundle', name, author, description),
+  installBundle: (bundleId: string) => ipcRenderer.invoke('install-bundle', bundleId),
+  listBundles: () => ipcRenderer.invoke('list-bundles'),
+
+  // User name
+  getUserName: () => ipcRenderer.invoke('get-user-name'),
+  setUserName: (name: string) => ipcRenderer.invoke('set-user-name', name),
+  onSetUserNamePrompt: (callback: () => void) =>
+    ipcRenderer.on('set-user-name-prompt', () => callback()),
+
+  // Tray icon
+  updateTrayIcon: (imagePath: string) => ipcRenderer.send('update-tray-icon', imagePath),
 })
