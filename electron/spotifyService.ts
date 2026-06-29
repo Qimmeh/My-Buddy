@@ -254,6 +254,86 @@ export async function playSpotifyQuery(query: string, win: BrowserWindow): Promi
   }
   return null;
 }
+export async function playSpotifyUri(uri: string, win: BrowserWindow): Promise<{name: string, artist: string, uri: string} | null> {
+  let token = await getValidToken();
+  if (!token) {
+    try {
+      await authenticateSpotify(win);
+      token = await getValidToken();
+    } catch (e) {
+      console.error('Failed to auth Spotify for URI play', e);
+      return null;
+    }
+  }
+  if (!token) return null;
+
+  const isTrack = uri.includes(':track:');
+  const isPlaylist = uri.includes(':playlist:');
+
+  try {
+    const body: Record<string, any> = {};
+    if (isPlaylist) {
+      body.context_uri = uri;
+    } else if (isTrack) {
+      body.uris = [uri];
+    } else {
+      return playSpotifyQuery(uri, win);
+    }
+
+    let playRes = await fetch('https://api.spotify.com/v1/me/player/play', {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (playRes.status === 404) {
+      const devicesRes = await fetch('https://api.spotify.com/v1/me/player/devices', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (devicesRes.ok) {
+        const devicesData: any = await devicesRes.json();
+        if (devicesData.devices?.length > 0) {
+          const deviceId = devicesData.devices[0].id;
+          playRes = await fetch('https://api.spotify.com/v1/me/player/play?device_id=' + deviceId, {
+            method: 'PUT',
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+        }
+      }
+    }
+
+    if (!playRes.ok) {
+      const psScript = '$wshell = New-Object -ComObject wscript.shell; Start-Process "' + uri + '"; Start-Sleep -Seconds 2; $wshell.AppActivate("Spotify"); Start-Sleep -Milliseconds 500; $wshell.SendKeys("{ENTER}")';
+      exec('powershell -Command "' + psScript + '"');
+    }
+
+    if (isTrack) {
+      const trackId = uri.split(':track:')[1];
+      const infoRes = await fetch('https://api.spotify.com/v1/tracks/' + trackId, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (infoRes.ok) {
+        const data: any = await infoRes.json();
+        return { name: data.name, artist: data.artists[0]?.name || 'Unknown', uri };
+      }
+    } else if (isPlaylist) {
+      const playlistId = uri.split(':playlist:')[1];
+      const infoRes = await fetch('https://api.spotify.com/v1/playlists/' + playlistId, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (infoRes.ok) {
+        const data: any = await infoRes.json();
+        return { name: data.name, artist: data.owner?.display_name || 'Unknown', uri };
+      }
+    }
+
+    return { name: 'Track', artist: 'Spotify', uri };
+  } catch (e) {
+    console.error('playSpotifyUri error', e);
+    return null;
+  }
+}
 
 let lastPlayingTrackId = '';
 
@@ -281,10 +361,7 @@ export function startSpotifyPoller(_win: BrowserWindow, triggerComment: (message
             
             // Only trigger if it's not the very first load
             if (lastPlayingTrackId !== '') {
-               // 30% chance to spontaneously react to the new song
-               if (Math.random() < 0.3) {
-                 triggerComment(`You are Zi Feng's Desktop Companion. He is now listening to the song "${trackName}" by "${artistName}" on Spotify. Give a very short, 1-sentence spontaneous reaction or comment about this song. Keep it cute and casual.`);
-               }
+               triggerComment(`You are Zi Feng's Desktop Companion. He is now listening to the song "${trackName}" by "${artistName}" on Spotify. Give a very short, 1-sentence spontaneous reaction or comment about this song. Keep it cute and casual.`);
             }
           }
         }

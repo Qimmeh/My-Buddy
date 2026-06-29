@@ -8,7 +8,14 @@ declare global {
       onAiStateChange: (callback: (state: string) => void) => void
       sendToOllama: (prompt: string) => Promise<string>
       addManualMemory: (memory: string) => void
-      saveSpotifyConfig: (id: string, secret: string) => void
+      getMemoryStore: () => Promise<{
+        songPlays: Record<string, { name: string; artist: string; uri: string; count: number }>,
+        playlists: Array<{ name: string; uri: string }>,
+        facts: string[]
+      }>
+      savePlaylistMemory: (name: string, uri: string) => Promise<boolean>
+      clearSongCount: (uri: string) => Promise<boolean>
+            saveSpotifyConfig: (id: string, secret: string) => void
       getSpotifyConfig: () => Promise<{clientId: string, clientSecret: string}>
       authenticateSpotify: () => void
       resizeWindow: (mode: 'avatar' | 'full') => void
