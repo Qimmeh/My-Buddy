@@ -1,12 +1,12 @@
 {
   "name": "my-buddy",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && electron-builder",
+    "build": "vite build && electron-builder",
     "lint": "oxlint",
     "preview": "vite preview"
   },
@@ -27,5 +27,22 @@
     "typescript": "~6.0.2",
     "vite": "^8.1.0",
     "wait-on": "^9.0.10"
+  },
+  "build": {
+    "productName": "My-Buddy",
+    "appId": "com.zifeng.my-buddy",
+    "directories": {
+      "output": "dist_app"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
   }
 }
