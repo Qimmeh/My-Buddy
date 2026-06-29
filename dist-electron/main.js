@@ -329,18 +329,26 @@ async function playSpotifyUri(uri, win) {
 	}
 }
 var lastPlayingTrackId = "";
+var isPlaybackActive = false;
+function isSpotifyPlaying() {
+	return isPlaybackActive;
+}
 function startSpotifyPoller(_win, triggerComment, onSongDetected) {
 	loadTokens();
 	console.log("[Spotify Poller] Started - polling every 10s");
 	setInterval(async () => {
 		console.log("[Spotify Poller] Tick - checking current track...");
 		const token = await getValidToken();
-		if (!token) return;
+		if (!token) {
+			isPlaybackActive = false;
+			return;
+		}
 		try {
 			const res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", { headers: { "Authorization": `Bearer ${token}` } });
 			if (res.status === 200) {
 				const data = await res.json();
 				if (data && data.item && data.is_playing) {
+					isPlaybackActive = true;
 					const trackId = data.item.id;
 					const trackName = data.item.name;
 					const artistName = data.item.artists[0]?.name || "Unknown Artist";
@@ -352,8 +360,9 @@ function startSpotifyPoller(_win, triggerComment, onSongDetected) {
 							if (onSongDetected) onSongDetected(trackName, artistName, trackId);
 						}
 					}
-				}
-			}
+				} else isPlaybackActive = false;
+			} else if (res.status === 204) isPlaybackActive = false;
+			else if (res.status === 401 || res.status === 403) isPlaybackActive = false;
 		} catch (e) {
 			console.error("[Spotify Poller] Error:", e);
 		}
@@ -637,6 +646,20 @@ function startAiService(win) {
 		console.log("[Memory] Poller detected song:", name, "by", artist);
 		incrementSongPlay(name, artist, "spotify:track:" + trackId);
 	});
+	let lastPlaylistSuggestionTime = 0;
+	setInterval(async () => {
+		if (isSpotifyPlaying()) return;
+		if (Math.random() >= .07) return;
+		const now = Date.now();
+		if (now - lastPlaylistSuggestionTime < 720 * 1e3) return;
+		lastPlaylistSuggestionTime = now;
+		const playlists = memoryStore.playlists;
+		let ctx = "";
+		if (playlists.length > 0) ctx = "Here are his saved playlists:\n" + playlists.map(function(p) {
+			return "- " + p.name + " (" + p.uri + ")";
+		}).join("\n");
+		triggerSpontaneousComment("You are Zi Feng's Desktop Companion. He is not currently listening to music or playing anything on Spotify. Suggest if he would like to play one of his favorite playlists. " + ctx + " Keep it short, 1 sentence, casual and cute. Mention a specific playlist name if you know one.");
+	}, 240 * 1e3);
 	ipcMain.handle("send-to-ollama", async (_event, prompt) => {
 		memory.push({
 			role: "user",
@@ -884,6 +907,8 @@ var win = null;
 var tray = null;
 var px = 0, py = 0;
 var vx = 2, vy = 1.5;
+var targetX = 0, targetY = 0;
+var idleFrames = 0;
 var SIZE = 45;
 var currentMode = "avatar";
 var lastSendState = "";
@@ -894,27 +919,57 @@ function sendState(state) {
 		win.webContents.send("ai-state-change", state);
 	}
 }
+function pickNewTarget(wa) {
+	const margin = SIZE * 2;
+	let tx, ty, attempts = 0;
+	do {
+		tx = wa.x + margin + Math.random() * (wa.width - margin * 2);
+		ty = wa.y + margin + Math.random() * (wa.height - margin * 2);
+		attempts++;
+	} while (Math.hypot(tx - px, ty - py) < 300 && attempts < 20);
+	targetX = tx;
+	targetY = ty;
+	idleFrames = 0;
+}
 function startPhysicsLoop() {
 	setInterval(() => {
 		try {
 			if (!win || win.isDestroyed() || currentMode !== "avatar" || isGrabbed) return;
 			const wa = screen.getPrimaryDisplay().workArea;
 			if (!wa || !wa.width || !wa.height) return;
+			if (targetX === 0 && targetY === 0) pickNewTarget(wa);
+			const dx = targetX - px;
+			const dy = targetY - py;
+			const dist = Math.hypot(dx, dy);
+			if (dist < 3) {
+				vx = 0;
+				vy = 0;
+				idleFrames++;
+				if (idleFrames > 1800) pickNewTarget(wa);
+			} else {
+				const speed = .8 + Math.random() * .4;
+				vx = dx / dist * speed;
+				vy = dy / dist * speed + .15;
+			}
 			px += vx;
 			py += vy;
 			if (px + SIZE >= wa.x + wa.width) {
 				px = wa.x + wa.width - SIZE;
 				vx = -(1.5 + Math.random() * 1.5);
+				pickNewTarget(wa);
 			} else if (px <= wa.x) {
 				px = wa.x;
 				vx = 1.5 + Math.random() * 1.5;
+				pickNewTarget(wa);
 			}
 			if (py + SIZE >= wa.y + wa.height) {
 				py = wa.y + wa.height - SIZE;
 				vy = -(1 + Math.random() * 1);
+				pickNewTarget(wa);
 			} else if (py <= wa.y) {
 				py = wa.y;
 				vy = 1 + Math.random() * 1;
+				pickNewTarget(wa);
 			}
 			px = Math.max(wa.x, Math.min(px, wa.x + wa.width - SIZE));
 			py = Math.max(wa.y, Math.min(py, wa.y + wa.height - SIZE));
@@ -971,7 +1026,7 @@ function createTray() {
 	const contextMenu = Menu.buildFromTemplate([{
 		label: "Quit",
 		click: () => {
-			app.exit();
+			app.quit();
 		}
 	}]);
 	tray.on("right-click", () => tray?.popUpContextMenu(contextMenu));
@@ -984,8 +1039,10 @@ function toggleWindow() {
 ipcMain.on("resize-window", (_event, mode) => {
 	if (!win || win.isDestroyed()) return;
 	currentMode = mode;
-	if (mode === "avatar") isGrabbed = false;
-	else {
+	if (mode === "avatar") {
+		isGrabbed = false;
+		pickNewTarget(screen.getPrimaryDisplay().workArea);
+	} else {
 		const { workArea } = screen.getDisplayNearestPoint({
 			x: Math.round(px),
 			y: Math.round(py)
@@ -1023,6 +1080,10 @@ ipcMain.on("end-drag", (_event, _dragVx, _dragVy, wasDragged) => {
 		if (wasDragged) {
 			vx = Math.max(-20, Math.min(20, _dragVx));
 			vy = _dragVy - 5;
+			const wa = screen.getPrimaryDisplay().workArea;
+			targetX = Math.max(wa.x + SIZE, Math.min(wa.x + wa.width - SIZE, px + vx * 30));
+			targetY = Math.max(wa.y + SIZE, Math.min(wa.y + wa.height - SIZE, py + vy * 30));
+			idleFrames = 0;
 		}
 	}
 });
@@ -1037,6 +1098,7 @@ app.whenReady().then(() => {
 		const { workArea } = screen.getPrimaryDisplay();
 		px = Math.round(workArea.x + workArea.width / 2 - SIZE / 2);
 		py = Math.round(workArea.y + workArea.height / 2 - SIZE / 2);
+		pickNewTarget(workArea);
 		win.setBounds({
 			x: px,
 			y: py,
@@ -1056,10 +1118,11 @@ app.on("window-all-closed", () => {
 	if (process.platform !== "darwin") app.quit();
 });
 app.on("will-quit", () => {
+	tray?.destroy();
 	globalShortcut.unregisterAll();
 });
 ipcMain.on("quit-app", () => {
-	app.exit();
+	app.quit();
 });
 ipcMain.on("save-spotify-config", (_event, id, secret) => {
 	saveSpotifyConfig(id, secret);

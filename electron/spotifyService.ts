@@ -336,6 +336,11 @@ export async function playSpotifyUri(uri: string, win: BrowserWindow): Promise<{
 }
 
 let lastPlayingTrackId = '';
+let isPlaybackActive = false;
+
+export function isSpotifyPlaying(): boolean {
+  return isPlaybackActive;
+}
 
 export function startSpotifyPoller(_win: BrowserWindow, triggerComment: (message: string) => void, onSongDetected?: (name: string, artist: string, trackId: string) => void) {
   loadTokens();
@@ -344,7 +349,10 @@ export function startSpotifyPoller(_win: BrowserWindow, triggerComment: (message
   setInterval(async () => {
     console.log('[Spotify Poller] Tick - checking current track...');
     const token = await getValidToken();
-    if (!token) return; // Silent return if not authenticated
+    if (!token) {
+      isPlaybackActive = false;
+      return;
+    }
 
     try {
       const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
@@ -354,6 +362,7 @@ export function startSpotifyPoller(_win: BrowserWindow, triggerComment: (message
       if (res.status === 200) {
         const data: any = await res.json();
         if (data && data.item && data.is_playing) {
+          isPlaybackActive = true;
           const trackId = data.item.id;
           const trackName = data.item.name;
           const artistName = data.item.artists[0]?.name || 'Unknown Artist';
@@ -368,7 +377,13 @@ export function startSpotifyPoller(_win: BrowserWindow, triggerComment: (message
                if (onSongDetected) { onSongDetected(trackName, artistName, trackId); }
             }
           }
+        } else {
+          isPlaybackActive = false;
         }
+      } else if (res.status === 204) {
+        isPlaybackActive = false;
+      } else if (res.status === 401 || res.status === 403) {
+        isPlaybackActive = false;
       }
     } catch (e) {
       console.error('[Spotify Poller] Error:', e);

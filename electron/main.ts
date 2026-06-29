@@ -22,6 +22,8 @@ let tray = null
 // Physics state
 let px = 0, py = 0
 let vx = 2, vy = 1.5
+let targetX = 0, targetY = 0
+let idleFrames = 0
 const SIZE = 45
 let currentMode = 'avatar'
 let lastSendState = ''
@@ -34,6 +36,19 @@ function sendState(state) {
   }
 }
 
+function pickNewTarget(wa) {
+  const margin = SIZE * 2
+  let tx, ty, attempts = 0
+  do {
+    tx = wa.x + margin + Math.random() * (wa.width - margin * 2)
+    ty = wa.y + margin + Math.random() * (wa.height - margin * 2)
+    attempts++
+  } while (Math.hypot(tx - px, ty - py) < 300 && attempts < 20)
+  targetX = tx
+  targetY = ty
+  idleFrames = 0
+}
+
 function startPhysicsLoop() {
   setInterval(() => {
     try {
@@ -43,30 +58,55 @@ function startPhysicsLoop() {
       const wa = display.workArea
       if (!wa || !wa.width || !wa.height) return
 
-      // Move the buddy
+      // Lazily pick first target
+      if (targetX === 0 && targetY === 0) pickNewTarget(wa)
+
+      // --- Waypoint steering ---
+      const dx = targetX - px
+      const dy = targetY - py
+      const dist = Math.hypot(dx, dy)
+
+     if (dist < 3) {
+       // Arrived — idle for a bit, then pick a new destination
+       vx = 0
+       vy = 0
+       idleFrames++
+       if (idleFrames > 1800) pickNewTarget(wa)
+      } else {
+        // Walk toward target with organic speed
+        const speed = 0.8 + Math.random() * 0.4
+        vx = (dx / dist) * speed
+        vy = (dy / dist) * speed + 0.15
+      }
+
+      // Integrate position
       px += vx
       py += vy
 
-      // Bounce off edges - simple and direct
+      // Bounce off edges — on hit, reflect and pick a new target
       // Right edge
       if (px + SIZE >= wa.x + wa.width) {
         px = wa.x + wa.width - SIZE
         vx = -(1.5 + Math.random() * 1.5)
+        pickNewTarget(wa)
       }
       // Left edge
       else if (px <= wa.x) {
         px = wa.x
         vx = 1.5 + Math.random() * 1.5
+        pickNewTarget(wa)
       }
       // Bottom edge
       if (py + SIZE >= wa.y + wa.height) {
         py = wa.y + wa.height - SIZE
         vy = -(1.0 + Math.random() * 1.0)
+        pickNewTarget(wa)
       }
       // Top edge
       else if (py <= wa.y) {
         py = wa.y
         vy = 1.0 + Math.random() * 1.0
+        pickNewTarget(wa)
       }
 
       // Hard safety clamp - never let position escape bounds
@@ -123,7 +163,7 @@ function createTray() {
   tray.setToolTip('Zi Feng Buddy')
   tray.on('click', () => toggleWindow())
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Quit', click: () => { app.exit() } }
+    { label: 'Quit', click: () => { app.quit() } }
   ])
   tray.on('right-click', () => tray?.popUpContextMenu(contextMenu))
 }
@@ -139,6 +179,8 @@ ipcMain.on('resize-window', (_event, mode) => {
   currentMode = mode
   if (mode === 'avatar') {
     isGrabbed = false
+    const display = screen.getPrimaryDisplay()
+    pickNewTarget(display.workArea)
     // Physics loop handles position/size on next tick
   } else {
     const display = screen.getDisplayNearestPoint({ x: Math.round(px), y: Math.round(py) })
@@ -168,6 +210,12 @@ ipcMain.on('end-drag', (_event, _dragVx, _dragVy, wasDragged) => {
       // When thrown, add upward velocity and let gravity pull it down
       vx = Math.max(-20, Math.min(20, _dragVx))
       vy = _dragVy - 5  // upward impulse
+      // Project target far in throw direction
+      const display = screen.getPrimaryDisplay()
+      const wa = display.workArea
+      targetX = Math.max(wa.x + SIZE, Math.min(wa.x + wa.width - SIZE, px + vx * 30))
+      targetY = Math.max(wa.y + SIZE, Math.min(wa.y + wa.height - SIZE, py + vy * 30))
+      idleFrames = 0
     }
   }
 })
@@ -187,6 +235,7 @@ app.whenReady().then(() => {
     const { workArea } = display
     px = Math.round(workArea.x + workArea.width / 2 - SIZE / 2)
     py = Math.round(workArea.y + workArea.height / 2 - SIZE / 2)
+    pickNewTarget(workArea)
     win.setBounds({ x: px, y: py, width: SIZE, height: SIZE })
     win.setAlwaysOnTop(true, 'screen-saver')
   }
@@ -197,9 +246,9 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
-app.on('will-quit', () => { globalShortcut.unregisterAll() })
+app.on('will-quit', () => { tray?.destroy(); globalShortcut.unregisterAll() })
 
-ipcMain.on('quit-app', () => { app.exit() })
+ipcMain.on('quit-app', () => { app.quit() })
 ipcMain.on('save-spotify-config', (_event, id, secret) => { saveSpotifyConfig(id, secret) })
 ipcMain.handle('get-spotify-config', async () => { return loadSpotifyConfig() })
 ipcMain.on('authenticate-spotify', (event) => {

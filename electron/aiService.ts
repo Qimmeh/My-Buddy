@@ -190,7 +190,7 @@ function saveMemory() {
   }
 }
 
-import { playSpotifyQuery, playSpotifyUri, startSpotifyPoller } from './spotifyService.js'
+import { playSpotifyQuery, playSpotifyUri, startSpotifyPoller, isSpotifyPlaying } from './spotifyService.js'
 import { getActiveWindowTitle } from './activeWindow.js'
 
 let lastActiveWindow = ''
@@ -280,6 +280,23 @@ export function startAiService(win: BrowserWindow) {
     console.log('[Memory] Poller detected song:', name, 'by', artist);
     incrementSongPlay(name, artist, 'spotify:track:' + trackId);
   })
+
+  // ====== Playlist Suggestion (chance-based) ======
+  let lastPlaylistSuggestionTime = 0;
+  setInterval(async () => {
+    if (isSpotifyPlaying()) return;
+    if (Math.random() >= 0.07) return;
+    const now = Date.now();
+    if (now - lastPlaylistSuggestionTime < 12 * 60 * 1000) return;
+    lastPlaylistSuggestionTime = now;
+
+    const playlists = memoryStore.playlists;
+    let ctx = '';
+    if (playlists.length > 0) {
+      ctx = 'Here are his saved playlists:\n' + playlists.map(function(p) { return '- ' + p.name + ' (' + p.uri + ')'; }).join('\n');
+    }
+    triggerSpontaneousComment("You are Zi Feng's Desktop Companion. He is not currently listening to music or playing anything on Spotify. Suggest if he would like to play one of his favorite playlists. " + ctx + ' Keep it short, 1 sentence, casual and cute. Mention a specific playlist name if you know one.');
+  }, 4 * 60 * 1000);
 
   // ====== IPC Handlers ======
 
