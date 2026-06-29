@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { BuddyAvatar } from './components/BuddyAvatar';
 import { ChatBubble } from './components/ChatBubble';
 import { InputTray } from './components/InputTray';
@@ -6,7 +6,7 @@ import { SettingsMenu } from './components/SettingsMenu';
 import './index.css';
 
 function App() {
-  const [state, setState] = useState<1 | 2 | 3 | 4>(3); // Default to 3 (Connected & Ready)
+  const [state, setState] = useState<'idle' | 'active' | 'ready' | 'thinking' | 'walking-left' | 'walking-right' | 'paused' | 'dizzy'>('ready');
   const [chatVisible, setChatVisible] = useState(false);
   const [inputVisible, setInputVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -16,8 +16,8 @@ function App() {
   useEffect(() => {
     // Listen for AI state changes from main process if implemented
     if (window.electronAPI.onAiStateChange) {
-      window.electronAPI.onAiStateChange((newState) => {
-        setState(newState);
+      window.electronAPI.onAiStateChange((newState: string) => {
+        setState(newState as any);
       });
     }
 
@@ -32,15 +32,15 @@ function App() {
     }
 
     // Ping Ollama on startup to check connection if needed
-    // Assuming state 3 is successful connection
-    setState(3);
+    // Assuming 'ready' is successful connection
+    setState('ready');
   }, []);
 
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: number | null = null;
     
     // Auto-hide after 5 seconds if chat is visible, input is NOT visible, not thinking, and settings closed
-    if (chatVisible && !inputVisible && state !== 4 && !settingsVisible) {
+    if (chatVisible && !inputVisible && state !== 'thinking' && !settingsVisible) {
       timeoutId = setTimeout(() => {
         setChatVisible(false);
       }, 5000);
@@ -70,7 +70,72 @@ function App() {
     }
   }, [chatVisible, settingsVisible, inputVisible]);
 
+  const [isDragging, setIsDragging] = useState(false);
+  const dragInfo = useRef({ startX: 0, startY: 0, isDragged: false, lastX: 0, lastY: 0, lastTime: 0, vx: 0, vy: 0 });
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.target instanceof Element) {
+      e.target.setPointerCapture(e.pointerId);
+    }
+    dragInfo.current = { 
+      startX: e.screenX, 
+      startY: e.screenY, 
+      isDragged: false,
+      lastX: e.screenX,
+      lastY: e.screenY,
+      lastTime: performance.now(),
+      vx: 0,
+      vy: 0
+    };
+    setIsDragging(true);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (isDragging) {
+      const dx = e.screenX - dragInfo.current.lastX;
+      const dy = e.screenY - dragInfo.current.lastY;
+      
+      if (Math.abs(e.screenX - dragInfo.current.startX) > 5 || Math.abs(e.screenY - dragInfo.current.startY) > 5) {
+        dragInfo.current.isDragged = true;
+      }
+      
+      const now = performance.now();
+      const dt = now - dragInfo.current.lastTime;
+      if (dt > 0) {
+        // Convert to pixels per frame (assuming ~60fps, 16.6ms per frame)
+        dragInfo.current.vx = (dx / dt) * 16.6;
+        dragInfo.current.vy = (dy / dt) * 16.6;
+      }
+
+      dragInfo.current.lastX = e.screenX;
+      dragInfo.current.lastY = e.screenY;
+      dragInfo.current.lastTime = now;
+      
+      if (window.electronAPI.dragWindow) {
+        window.electronAPI.dragWindow(dx, dy);
+      }
+    }
+  };
+
+  const handlePointerUp = (_e: React.PointerEvent) => {
+    setIsDragging(false);
+    if (window.electronAPI.endDrag) {
+      if (dragInfo.current.isDragged) {
+        // Clamp velocity so she doesn't break the sound barrier if dt was 1ms
+        const maxV = 40;
+        const clampedVx = Math.max(-maxV, Math.min(maxV, dragInfo.current.vx));
+        const clampedVy = Math.max(-maxV, Math.min(maxV, dragInfo.current.vy));
+        window.electronAPI.endDrag(clampedVx, clampedVy);
+      } else {
+        // It was just a click. We MUST send endDrag(0,0) to release her physics!
+        window.electronAPI.endDrag(0, 0);
+      }
+    }
+  };
+
   const handleAvatarClick = () => {
+    if (dragInfo.current.isDragged) return; // Prevent click if dragged
+
     // Hide settings if open
     setSettingsVisible(false);
     
@@ -97,16 +162,16 @@ function App() {
   const handleMessageSubmit = async (prompt: string) => {
     setInputVisible(false);
     setChatVisible(true);
-    setState(4); // Thinking
+    setState('thinking'); // Thinking
 
     try {
       const response = await window.electronAPI.sendToOllama(prompt);
       setLastMessage(response);
-      setState(3); // Back to ready
+      setState('ready'); // Back to ready
     } catch (err) {
       console.error(err);
       setLastMessage("I'm offline right now.");
-      setState(1); // Offline
+      setState('idle'); // Offline
     }
   };
 
@@ -147,7 +212,7 @@ function App() {
           message={lastMessage} 
           isVisible={chatVisible && !settingsVisible} 
           onClick={handleChatBubbleClick}
-          isThinking={state === 4}
+          isThinking={state === 'thinking'}
         />
       </div>
 
@@ -156,6 +221,9 @@ function App() {
         onClick={handleAvatarClick}
         onContextMenu={handleAvatarContextMenu}
         isBouncing={isBouncing}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
       />
     </div>
   );

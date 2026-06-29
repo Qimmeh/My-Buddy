@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getSpotifyConfig: () => ipcRenderer.invoke("get-spotify-config"),
 	authenticateSpotify: () => ipcRenderer.send("authenticate-spotify"),
 	resizeWindow: (mode) => ipcRenderer.send("resize-window", mode),
+	dragWindow: (dx, dy) => ipcRenderer.send("drag-window", dx, dy),
+	endDrag: (vx, vy) => ipcRenderer.send("end-drag", vx, vy),
 	quitApp: () => ipcRenderer.send("quit-app")
 });
 //#endregion

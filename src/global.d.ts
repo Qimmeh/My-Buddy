@@ -5,13 +5,15 @@ declare global {
     electronAPI: {
       onRamGuardStatus: (callback: (status: 'active' | 'sleeping') => void) => void
       onProactiveMessage: (callback: (message: string) => void) => void
-      onAiStateChange: (callback: (state: 1 | 2 | 3 | 4) => void) => void
+      onAiStateChange: (callback: (state: string) => void) => void
       sendToOllama: (prompt: string) => Promise<string>
       addManualMemory: (memory: string) => void
       saveSpotifyConfig: (id: string, secret: string) => void
       getSpotifyConfig: () => Promise<{clientId: string, clientSecret: string}>
       authenticateSpotify: () => void
-      setIgnoreMouseEvents: (ignore: boolean) => void
+      resizeWindow: (mode: 'avatar' | 'full') => void
+      dragWindow: (dx: number, dy: number) => void
+      endDrag: (vx: number, vy: number) => void
       quitApp: () => void
     }
   }

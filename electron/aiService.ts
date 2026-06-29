@@ -1,14 +1,14 @@
-import { BrowserWindow, ipcMain, app } from 'electron'
-import { exec } from 'node:child_process'
-import { join } from 'node:path'
+import { BrowserWindow, ipcMain } from 'electron'
 import * as fs from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const HISTORY_FILE = join(__dirname, '../../chat_history.json')
+const MEMORY_BOX_FILE = join(__dirname, '../../memory_box.json')
 const OLLAMA_API = 'http://localhost:11434/api/chat'
 const MODEL_NAME = 'llama3'
-
-const HISTORY_FILE = join(app.getPath('userData'), 'history.json')
-const MEMORY_BOX_FILE = join(app.getPath('userData'), 'memory_box.json')
-const MAX_MEMORY = 20
+const MAX_MEMORY = 50
 
 let memoryBox: string[] = []
 
@@ -19,7 +19,7 @@ Here are the facts you remember about the user:
 {MEMORY_BOX}
 
 If the user asks you to play music or open Spotify (especially with a specific song, artist, or playlist), you should reply briefly acknowledging it, and end your response EXACTLY with the text: [TOOL:SPOTIFY:query].
-IMPORTANT: Make the query extremely accurate for Spotify's search engine. If it's a playlist, INCLUDE the word 'playlist' (e.g. [TOOL:SPOTIFY:qimchi playlist]). If it's a specific song by an artist, just put the song name and artist name without the word 'by' (e.g. [TOOL:SPOTIFY:double take dhruv]).
+IMPORTANT: Make the query extremely accurate for Spotify's search engine. If the user's request matches a Spotify URI from your memory, use the exact URI as the query (e.g. [TOOL:SPOTIFY:spotify:track:12345]). Otherwise, if it's a playlist, INCLUDE the word 'playlist'. If it's a specific song by an artist, put the song name and artist name (e.g. [TOOL:SPOTIFY:double take dhruv]).
 If the user tells you to remember something about them or their preferences, you must save it by ending your response EXACTLY with the text: [TOOL:REMEMBER:fact].
 For example: [TOOL:REMEMBER:User's favorite color is blue].
 Do not include brackets except for the tool call.`
@@ -119,7 +119,19 @@ export function startAiService(win: BrowserWindow) {
       const query = spotifyMatch[1].trim()
       finalResponse = finalResponse.replace(spotifyMatch[0], '').trim()
       if (!finalResponse) finalResponse = `Playing ${query} on Spotify!`
-      playSpotifyQuery(query, win)
+      
+      // Fire and forget, but handle memory addition inside
+      playSpotifyQuery(query, win).then(playedMetadata => {
+        if (playedMetadata) {
+          const fact = `User played music: "${playedMetadata.name}" by ${playedMetadata.artist} (Spotify URI: ${playedMetadata.uri})`;
+          // Avoid duplicate identical facts
+          if (!memoryBox.includes(fact)) {
+            memoryBox.push(fact);
+            saveMemory();
+          }
+        }
+      }).catch(console.error);
+      
       memory.push({ role: 'system', content: `System action executed: Searching and playing Spotify for ${query}` })
     }
 
@@ -127,8 +139,10 @@ export function startAiService(win: BrowserWindow) {
       const fact = rememberMatch[1].trim()
       finalResponse = finalResponse.replace(rememberMatch[0], '').trim()
       if (!finalResponse) finalResponse = `Got it, I'll remember that!`
-      memoryBox.push(fact)
-      saveMemory()
+      if (!memoryBox.includes(fact)) {
+        memoryBox.push(fact)
+        saveMemory()
+      }
       memory.push({ role: 'system', content: `System action executed: Saved "${fact}" to long term memory.` })
     }
 

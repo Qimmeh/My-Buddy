@@ -92,7 +92,7 @@ export async function getValidToken(): Promise<string | null> {
   return accessToken;
 }
 
-export function authenticateSpotify(win: BrowserWindow) {
+export function authenticateSpotify(_win: BrowserWindow) {
   return new Promise<void>((resolve, reject) => {
     if (!clientId || !clientSecret) {
       reject('No Spotify credentials configured');
@@ -154,7 +154,7 @@ export function authenticateSpotify(win: BrowserWindow) {
   });
 }
 
-export async function playSpotifyQuery(query: string, win: BrowserWindow) {
+export async function playSpotifyQuery(query: string, win: BrowserWindow): Promise<{name: string, artist: string, uri: string} | null> {
   let token = await getValidToken();
   if (!token) {
     try {
@@ -162,11 +162,11 @@ export async function playSpotifyQuery(query: string, win: BrowserWindow) {
       token = await getValidToken();
     } catch (e) {
       console.error('Failed to auth Spotify during play', e);
-      return;
+      return null;
     }
   }
 
-  if (!token) return;
+  if (!token) return null;
 
   // Search for the track or playlist
   try {
@@ -177,11 +177,17 @@ export async function playSpotifyQuery(query: string, win: BrowserWindow) {
     if (searchRes.ok) {
       const data: any = await searchRes.json();
       let uriToPlay = null;
+      let name = '';
+      let artist = '';
       
       if (data.playlists && data.playlists.items.length > 0 && query.toLowerCase().includes('playlist')) {
         uriToPlay = data.playlists.items[0].uri;
+        name = data.playlists.items[0].name;
+        artist = data.playlists.items[0].owner.display_name;
       } else if (data.tracks && data.tracks.items.length > 0) {
         uriToPlay = data.tracks.items[0].uri;
+        name = data.tracks.items[0].name;
+        artist = data.tracks.items[0].artists[0].name;
       }
       
       if (uriToPlay) {
@@ -236,6 +242,8 @@ export async function playSpotifyQuery(query: string, win: BrowserWindow) {
           `;
           exec(`powershell -Command "${psScript.replace(/\n/g, ';')}"`);
         }
+        
+        return { name, artist, uri: uriToPlay };
       } else {
         // Fallback: just open search
         exec(`start "" "spotify:search:${encodeURIComponent(query)}"`);
@@ -244,11 +252,12 @@ export async function playSpotifyQuery(query: string, win: BrowserWindow) {
   } catch (e) {
     console.error('Spotify search/play error', e);
   }
+  return null;
 }
 
 let lastPlayingTrackId = '';
 
-export function startSpotifyPoller(win: BrowserWindow, triggerComment: (message: string) => void) {
+export function startSpotifyPoller(_win: BrowserWindow, triggerComment: (message: string) => void) {
   loadTokens();
   
   setInterval(async () => {

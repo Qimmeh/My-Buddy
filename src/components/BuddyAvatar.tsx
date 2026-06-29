@@ -1,35 +1,37 @@
-import { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import idleImg from '../assets/Idle.png';
 import activeImg from '../assets/active.png';
-import readyImg from '../assets/veryactive.png';
-import thinkingImg from '../assets/thinking.png';
+import readyImg from '../assets/thinking.png';
+import thinkingImg from '../assets/veryactive.png';
+import walkLeftImg from '../assets/walking_left.png';
+import walkRightImg from '../assets/walking_right.png';
+import pausedImg from '../assets/paused.png';
+import angryDizzyImg from '../assets/angry_dizzy.png';
 
 interface BuddyAvatarProps {
-  state: 1 | 2 | 3 | 4;
+  state: 'idle' | 'active' | 'ready' | 'thinking' | 'walking-left' | 'walking-right' | 'paused' | 'dizzy';
   onClick: () => void;
-  onContextMenu?: (e: React.MouseEvent) => void;
+  onContextMenu: (e: React.MouseEvent) => void;
   isBouncing: boolean;
+  onPointerDown?: (e: React.PointerEvent) => void;
+  onPointerMove?: (e: React.PointerEvent) => void;
+  onPointerUp?: (e: React.PointerEvent) => void;
 }
 
-export function BuddyAvatar({ state, onClick, onContextMenu, isBouncing }: BuddyAvatarProps) {
+export function BuddyAvatar({ state, onClick, onContextMenu, isBouncing, onPointerDown, onPointerMove, onPointerUp }: BuddyAvatarProps) {
   const [currentImage, setCurrentImage] = useState(idleImg);
 
   useEffect(() => {
     switch (state) {
-      case 1:
-        setCurrentImage(idleImg);
-        break;
-      case 2:
-        setCurrentImage(activeImg);
-        break;
-      case 3:
-        setCurrentImage(readyImg);
-        break;
-      case 4:
-        setCurrentImage(thinkingImg);
-        break;
-      default:
-        setCurrentImage(idleImg);
+      case 'idle': setCurrentImage(idleImg); break;
+      case 'active': setCurrentImage(activeImg); break;
+      case 'ready': setCurrentImage(readyImg); break;
+      case 'thinking': setCurrentImage(thinkingImg); break;
+      case 'walking-left': setCurrentImage(walkLeftImg); break;
+      case 'walking-right': setCurrentImage(walkRightImg); break;
+      case 'paused': setCurrentImage(pausedImg); break;
+      case 'dizzy': setCurrentImage(angryDizzyImg); break;
+      default: setCurrentImage(idleImg);
     }
   }, [state]);
 
@@ -38,6 +40,9 @@ export function BuddyAvatar({ state, onClick, onContextMenu, isBouncing }: Buddy
       className={`buddy-avatar-container ${isBouncing ? 'bounce-once' : ''}`}
       onClick={onClick}
       onContextMenu={onContextMenu}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
       style={{
         cursor: 'pointer',
         width: '45px',
@@ -46,7 +51,7 @@ export function BuddyAvatar({ state, onClick, onContextMenu, isBouncing }: Buddy
         justifyContent: 'center',
         alignItems: 'flex-end',
         position: 'relative',
-        WebkitAppRegion: 'no-drag' // Make sure we can click it
+        WebkitAppRegion: 'no-drag'
       } as React.CSSProperties}
     >
       <img 
@@ -56,7 +61,7 @@ export function BuddyAvatar({ state, onClick, onContextMenu, isBouncing }: Buddy
           maxWidth: '100%',
           maxHeight: '100%',
           objectFit: 'contain',
-          filter: 'drop-shadow(0px 0px 3px rgba(180, 80, 255, 0.5))' // Adjusted shadow intensity
+          filter: 'drop-shadow(0px 0px 3px rgba(180, 80, 255, 0.5))'
         }}
         draggable="false"
       />

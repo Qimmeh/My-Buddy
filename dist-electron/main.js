@@ -119,7 +119,7 @@ async function getValidToken() {
 	}
 	return accessToken;
 }
-function authenticateSpotify(win) {
+function authenticateSpotify(_win) {
 	return new Promise((resolve, reject) => {
 		if (!clientId || !clientSecret) {
 			reject("No Spotify credentials configured");
@@ -176,16 +176,25 @@ async function playSpotifyQuery(query, win) {
 		token = await getValidToken();
 	} catch (e) {
 		console.error("Failed to auth Spotify during play", e);
-		return;
+		return null;
 	}
-	if (!token) return;
+	if (!token) return null;
 	try {
 		const searchRes = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track,playlist&limit=1`, { headers: { "Authorization": `Bearer ${token}` } });
 		if (searchRes.ok) {
 			const data = await searchRes.json();
 			let uriToPlay = null;
-			if (data.playlists && data.playlists.items.length > 0 && query.toLowerCase().includes("playlist")) uriToPlay = data.playlists.items[0].uri;
-			else if (data.tracks && data.tracks.items.length > 0) uriToPlay = data.tracks.items[0].uri;
+			let name = "";
+			let artist = "";
+			if (data.playlists && data.playlists.items.length > 0 && query.toLowerCase().includes("playlist")) {
+				uriToPlay = data.playlists.items[0].uri;
+				name = data.playlists.items[0].name;
+				artist = data.playlists.items[0].owner.display_name;
+			} else if (data.tracks && data.tracks.items.length > 0) {
+				uriToPlay = data.tracks.items[0].uri;
+				name = data.tracks.items[0].name;
+				artist = data.tracks.items[0].artists[0].name;
+			}
 			if (uriToPlay) {
 				let playRes = await fetch("https://api.spotify.com/v1/me/player/play", {
 					method: "PUT",
@@ -230,14 +239,20 @@ async function playSpotifyQuery(query, win) {
             $wshell.SendKeys("{ENTER}")
           `.replace(/\n/g, ";")}"`);
 				}
+				return {
+					name,
+					artist,
+					uri: uriToPlay
+				};
 			} else exec(`start "" "spotify:search:${encodeURIComponent(query)}"`);
 		}
 	} catch (e) {
 		console.error("Spotify search/play error", e);
 	}
+	return null;
 }
 var lastPlayingTrackId = "";
-function startSpotifyPoller(win, triggerComment) {
+function startSpotifyPoller(_win, triggerComment) {
 	loadTokens();
 	setInterval(async () => {
 		const token = await getValidToken();
@@ -296,11 +311,12 @@ async function getActiveWindowTitle() {
 }
 //#endregion
 //#region electron/aiService.ts
+var __dirname$1 = dirname(fileURLToPath(import.meta.url));
+var HISTORY_FILE = join(__dirname$1, "../../chat_history.json");
+var MEMORY_BOX_FILE = join(__dirname$1, "../../memory_box.json");
 var OLLAMA_API = "http://localhost:11434/api/chat";
 var MODEL_NAME = "llama3";
-var HISTORY_FILE = join(app.getPath("userData"), "history.json");
-var MEMORY_BOX_FILE = join(app.getPath("userData"), "memory_box.json");
-var MAX_MEMORY = 20;
+var MAX_MEMORY = 50;
 var memoryBox = [];
 var SYSTEM_PROMPT = `You are Zi Feng's Desktop Companion. You live in his system tray as Raiden Shogun from Genshin Impact.
 You are a specialized, evolving system AI. Your personality is sleek, helpful, and tech-savvy. You have memory of past conversations.
@@ -309,7 +325,7 @@ Here are the facts you remember about the user:
 {MEMORY_BOX}
 
 If the user asks you to play music or open Spotify (especially with a specific song, artist, or playlist), you should reply briefly acknowledging it, and end your response EXACTLY with the text: [TOOL:SPOTIFY:query].
-IMPORTANT: Make the query extremely accurate for Spotify's search engine. If it's a playlist, INCLUDE the word 'playlist' (e.g. [TOOL:SPOTIFY:qimchi playlist]). If it's a specific song by an artist, just put the song name and artist name without the word 'by' (e.g. [TOOL:SPOTIFY:double take dhruv]).
+IMPORTANT: Make the query extremely accurate for Spotify's search engine. If the user's request matches a Spotify URI from your memory, use the exact URI as the query (e.g. [TOOL:SPOTIFY:spotify:track:12345]). Otherwise, if it's a playlist, INCLUDE the word 'playlist'. If it's a specific song by an artist, put the song name and artist name (e.g. [TOOL:SPOTIFY:double take dhruv]).
 If the user tells you to remember something about them or their preferences, you must save it by ending your response EXACTLY with the text: [TOOL:REMEMBER:fact].
 For example: [TOOL:REMEMBER:User's favorite color is blue].
 Do not include brackets except for the tool call.`;
@@ -385,7 +401,15 @@ function startAiService(win) {
 			const query = spotifyMatch[1].trim();
 			finalResponse = finalResponse.replace(spotifyMatch[0], "").trim();
 			if (!finalResponse) finalResponse = `Playing ${query} on Spotify!`;
-			playSpotifyQuery(query, win);
+			playSpotifyQuery(query, win).then((playedMetadata) => {
+				if (playedMetadata) {
+					const fact = `User played music: "${playedMetadata.name}" by ${playedMetadata.artist} (Spotify URI: ${playedMetadata.uri})`;
+					if (!memoryBox.includes(fact)) {
+						memoryBox.push(fact);
+						saveMemory();
+					}
+				}
+			}).catch(console.error);
 			memory.push({
 				role: "system",
 				content: `System action executed: Searching and playing Spotify for ${query}`
@@ -395,8 +419,10 @@ function startAiService(win) {
 			const fact = rememberMatch[1].trim();
 			finalResponse = finalResponse.replace(rememberMatch[0], "").trim();
 			if (!finalResponse) finalResponse = `Got it, I'll remember that!`;
-			memoryBox.push(fact);
-			saveMemory();
+			if (!memoryBox.includes(fact)) {
+				memoryBox.push(fact);
+				saveMemory();
+			}
 			memory.push({
 				role: "system",
 				content: `System action executed: Saved "${fact}" to long term memory.`
@@ -453,6 +479,145 @@ var __dirname = dirname(fileURLToPath(import.meta.url));
 var preload = join(__dirname, "preload.js");
 var win = null;
 var tray = null;
+var px = 0, py = 0;
+var vx = 2, vy = 1.5;
+var isGrabbed = false;
+var isThrown = false;
+var isRespawning = false;
+var isPaused = false;
+var currentMode = "avatar";
+var lastSendState = "";
+function sendState(state) {
+	if (win && !win.isDestroyed() && lastSendState !== state) {
+		lastSendState = state;
+		win.webContents.send("ai-state-change", state);
+	}
+}
+var respawnEdge = "top";
+function startPhysicsLoop() {
+	const frameTime = 1e3 / 60;
+	vx = 1;
+	vy = 1;
+	setInterval(() => {
+		if (!win || win.isDestroyed() || currentMode === "full" || isGrabbed || isRespawning) return;
+		const displays = screen.getAllDisplays();
+		let minX = 0, minY = 0, maxX = 0, maxY = 0;
+		if (displays.length > 0) {
+			minX = Math.min(...displays.map((d) => d.workArea.x));
+			minY = Math.min(...displays.map((d) => d.workArea.y));
+			maxX = Math.max(...displays.map((d) => d.workArea.x + d.workArea.width));
+			maxY = Math.max(...displays.map((d) => d.workArea.y + d.workArea.height));
+		}
+		const bounds = {
+			x: minX,
+			y: minY,
+			width: maxX - minX,
+			height: maxY - minY
+		};
+		const w = 45, h = 45;
+		if (!isPaused && !isThrown) {
+			px += vx;
+			py += vy;
+			if (px <= bounds.x) {
+				px = bounds.x;
+				vx = Math.abs(vx) || 1;
+				vy = (Math.random() > .5 ? 1 : -1) * (.8 + Math.random() * .4);
+				console.log(`[BOUNCE] Left edge hit at px:${px}, bounds.x:${bounds.x}`);
+			} else if (px + w >= bounds.x + bounds.width) {
+				px = bounds.x + bounds.width - w;
+				vx = -(Math.abs(vx) || 1);
+				vy = (Math.random() > .5 ? 1 : -1) * (.8 + Math.random() * .4);
+				console.log(`[BOUNCE] Right edge hit at px:${px + w}, bounds.right:${bounds.x + bounds.width}`);
+			}
+			if (py <= bounds.y) {
+				py = bounds.y;
+				vy = Math.abs(vy) || 1;
+				vx = (Math.random() > .5 ? 1 : -1) * (.8 + Math.random() * .4);
+				console.log(`[BOUNCE] Top edge hit at py:${py}, bounds.y:${bounds.y}`);
+			} else if (py + h >= bounds.y + bounds.height) {
+				py = bounds.y + bounds.height - h;
+				vy = -(Math.abs(vy) || 1);
+				vx = (Math.random() > .5 ? 1 : -1) * (.8 + Math.random() * .4);
+				console.log(`[BOUNCE] Bottom edge hit at py:${py + h}, bounds.bottom:${bounds.y + bounds.height}`);
+			}
+			sendState(vx > 0 ? "walking-right" : "walking-left");
+		} else if (isThrown) {
+			px += vx;
+			py += vy;
+			vy += .5;
+			vx *= .98;
+			let outOfBounds = false;
+			if (px + w < bounds.x) {
+				outOfBounds = true;
+				respawnEdge = "left";
+			} else if (px > bounds.x + bounds.width) {
+				outOfBounds = true;
+				respawnEdge = "right";
+			} else if (py + h < bounds.y) {
+				outOfBounds = true;
+				respawnEdge = "top";
+			} else if (py > bounds.y + bounds.height + 50) {
+				outOfBounds = true;
+				respawnEdge = "bottom";
+			}
+			if (outOfBounds) {
+				isThrown = false;
+				isRespawning = true;
+				win.hide();
+				setTimeout(() => {
+					if (respawnEdge === "left") {
+						px = bounds.x - w;
+						py = bounds.y + bounds.height / 3;
+						vx = 8;
+						vy = -5;
+					} else if (respawnEdge === "right") {
+						px = bounds.x + bounds.width;
+						py = bounds.y + bounds.height / 3;
+						vx = -8;
+						vy = -5;
+					} else if (respawnEdge === "top") {
+						px = bounds.x + bounds.width / 2;
+						py = bounds.y - h;
+						vx = 0;
+						vy = 5;
+					} else {
+						px = bounds.x + bounds.width / 2;
+						py = bounds.y + bounds.height;
+						vx = 0;
+						vy = -15;
+					}
+					isRespawning = false;
+					isThrown = true;
+					sendState("dizzy");
+					win?.show();
+				}, 3e3);
+			} else {
+				if (py + h >= bounds.y + bounds.height && vy > 0) {
+					py = bounds.y + bounds.height - h;
+					vy = -vy * .6;
+					if (Math.abs(vy) < 2) {
+						isThrown = false;
+						vy = 1;
+						vx = vx > 0 ? 1 : -1;
+					}
+				}
+				sendState("dizzy");
+			}
+		}
+		win.setPosition(Math.round(px), Math.round(py));
+	}, frameTime);
+	setInterval(() => {
+		if (currentMode === "avatar" && !isGrabbed && !isThrown && !isRespawning) {
+			isPaused = true;
+			sendState("paused");
+			setTimeout(() => {
+				isPaused = false;
+				vx = (Math.random() > .5 ? 1 : -1) * (.8 + Math.random() * .4);
+				vy = (Math.random() > .5 ? 1 : -1) * (.8 + Math.random() * .4);
+			}, 3e3 + Math.random() * 4e3);
+		}
+	}, 1e4 + Math.random() * 1e4);
+}
 function createWindow() {
 	win = new BrowserWindow({
 		width: 300,
@@ -506,29 +671,56 @@ function toggleWindow() {
 	if (win.isVisible()) win.hide();
 	else win.show();
 }
-ipcMain.on("resize-window", (event, mode) => {
+ipcMain.on("resize-window", (_event, mode) => {
 	if (!win || win.isDestroyed()) return;
-	const display = screen.getPrimaryDisplay();
-	display.bounds;
-	const { workArea } = display;
+	currentMode = mode;
+	const { workArea } = screen.getPrimaryDisplay();
 	if (mode === "avatar") {
-		const x = Math.round(workArea.x + 148);
-		const y = Math.round(workArea.y + workArea.height - 45);
 		win.setBounds({
-			x,
-			y,
+			x: Math.round(px),
+			y: Math.round(py),
 			width: 45,
 			height: 45
 		});
+		isThrown = false;
+		isGrabbed = false;
 	} else {
-		const x = Math.round(workArea.x + 20);
-		const y = Math.round(workArea.y + workArea.height - 400);
+		let fx = Math.round(px - 127.5);
+		let fy = Math.round(py - 355);
+		if (fx < workArea.x) fx = workArea.x;
+		if (fx + 300 > workArea.x + workArea.width) fx = workArea.x + workArea.width - 300;
+		if (fy < workArea.y) fy = workArea.y;
 		win.setBounds({
-			x,
-			y,
+			x: fx,
+			y: fy,
 			width: 300,
 			height: 400
 		});
+		sendState("ready");
+	}
+});
+ipcMain.on("drag-window", (_event, dx, dy) => {
+	if (currentMode === "avatar") {
+		isGrabbed = true;
+		isThrown = false;
+		px += dx;
+		py += dy;
+		win?.setBounds({
+			x: Math.round(px),
+			y: Math.round(py),
+			width: 45,
+			height: 45
+		});
+	}
+});
+ipcMain.on("end-drag", (_event, dragVx, dragVy) => {
+	if (currentMode === "avatar" && isGrabbed) {
+		isGrabbed = false;
+		if (Math.abs(dragVx) > 5 || Math.abs(dragVy) > 5) {
+			isThrown = true;
+			vx = dragVx;
+			vy = dragVy;
+		}
 	}
 });
 app.whenReady().then(() => {
@@ -536,16 +728,17 @@ app.whenReady().then(() => {
 	createTray();
 	if (win) {
 		const { workArea } = screen.getPrimaryDisplay();
-		const x = Math.round(workArea.x + 148);
-		const y = Math.round(workArea.y + workArea.height - 45);
+		px = Math.round(workArea.x + workArea.width / 2);
+		py = Math.round(workArea.y + workArea.height / 2);
 		win.setBounds({
-			x,
-			y,
+			x: px,
+			y: py,
 			width: 45,
 			height: 45
 		});
 		win.setAlwaysOnTop(true, "screen-saver");
 	}
+	startPhysicsLoop();
 	win?.show();
 	globalShortcut.register("CommandOrControl+Shift+Space", () => {
 		toggleWindow();
@@ -563,7 +756,7 @@ app.on("will-quit", () => {
 ipcMain.on("quit-app", () => {
 	app.exit();
 });
-ipcMain.on("save-spotify-config", (event, id, secret) => {
+ipcMain.on("save-spotify-config", (_event, id, secret) => {
 	saveSpotifyConfig(id, secret);
 });
 ipcMain.handle("get-spotify-config", async () => {
