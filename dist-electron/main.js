@@ -918,6 +918,26 @@ var moodTimer = 0;
 var lastInteractionTime = Date.now();
 var mood = "neutral";
 var mouseNearby = false;
+var proactiveTimer = 0;
+var hasGreeted = false;
+var proactiveMessages = [
+	"*stretches*",
+	"*wonders what you're doing*",
+	"*hums a little tune*",
+	"*looks around curiously*",
+	"*feeling cozy today*",
+	"*zzz... oh! was I sleeping?*",
+	"*checks the time*",
+	"*thinks about going for a walk*",
+	"*notices you looking*",
+	"*smiles*",
+	"*daydreams*",
+	"*plays with a stray pixel*",
+	"*watches the cursor curiously*",
+	"*feels a breeze*",
+	"*notices something interesting*",
+	"*happily wiggles*"
+];
 function sendMicroAction(action) {
 	if (win && !win.isDestroyed()) win.webContents.send("micro-action", action);
 }
@@ -1006,7 +1026,36 @@ function startPhysicsLoop() {
 				else mood = "sleepy";
 				const hour = (/* @__PURE__ */ new Date()).getHours();
 				if (hour >= 22 || hour < 7) mood = "sleepy";
+				else if (hour >= 6 && hour < 12) {
+					if (mood !== "sleepy") mood = "happy";
+				} else if (hour >= 17 && hour < 22) {
+					if (mood === "neutral") mood = "sleepy";
+				}
 			}
+			if (currentMode === "avatar" && dist < 3 && mood !== "sleepy") {
+				proactiveTimer++;
+				if (proactiveTimer > 3600 + Math.random() * 3600) {
+					proactiveTimer = 0;
+					sendMicroAction("bounce");
+					const msg = proactiveMessages[Math.floor(Math.random() * proactiveMessages.length)];
+					if (win && !win.isDestroyed()) win.webContents.send("proactive-message", msg);
+				}
+			}
+			if (mouseNearby) {
+				if (Date.now() - lastInteractionTime > 3e5 && !hasGreeted) {
+					hasGreeted = true;
+					sendMicroAction("bounce");
+					const greetings = [
+						"Welcome back!",
+						"There you are!",
+						"You're back!",
+						"Hello again!",
+						"Was wondering where you went!"
+					];
+					const msg = greetings[Math.floor(Math.random() * greetings.length)];
+					if (win && !win.isDestroyed()) win.webContents.send("proactive-message", msg);
+				}
+			} else hasGreeted = false;
 			px = Math.max(wa.x, Math.min(px, wa.x + wa.width - SIZE));
 			py = Math.max(wa.y, Math.min(py, wa.y + wa.height - SIZE));
 			if (vx > 0) sendState("walking-right");

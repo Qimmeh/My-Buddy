@@ -257,6 +257,12 @@
       "artist": "Lil Tecca",
       "uri": "spotify:track:1lOe9qE0vR9zwWQAOk6CoO",
       "count": 1
+    },
+    "spotify:track:0Lfv4LQZ0kMN8AKbjlHGBk": {
+      "name": "我看过",
+      "artist": "洪一诺",
+      "uri": "spotify:track:0Lfv4LQZ0kMN8AKbjlHGBk",
+      "count": 3
     }
   },
   "playlists": [
@@ -266,6 +272,6 @@
     }
   ],
   "facts": [
-    "User is currently looking at: Codex"
+    "User is currently looking at: my-buddy"
   ]
 }
