@@ -337,10 +337,12 @@ export async function playSpotifyUri(uri: string, win: BrowserWindow): Promise<{
 
 let lastPlayingTrackId = '';
 
-export function startSpotifyPoller(_win: BrowserWindow, triggerComment: (message: string) => void) {
+export function startSpotifyPoller(_win: BrowserWindow, triggerComment: (message: string) => void, onSongDetected?: (name: string, artist: string, trackId: string) => void) {
   loadTokens();
+  console.log('[Spotify Poller] Started - polling every 10s');
   
   setInterval(async () => {
+    console.log('[Spotify Poller] Tick - checking current track...');
     const token = await getValidToken();
     if (!token) return; // Silent return if not authenticated
 
@@ -357,17 +359,19 @@ export function startSpotifyPoller(_win: BrowserWindow, triggerComment: (message
           const artistName = data.item.artists[0]?.name || 'Unknown Artist';
           
           if (trackId && trackId !== lastPlayingTrackId) {
+            console.log('[Spotify Poller] New track detected:', trackName, 'by', artistName);
             lastPlayingTrackId = trackId;
             
             // Only trigger if it's not the very first load
             if (lastPlayingTrackId !== '') {
                triggerComment(`You are Zi Feng's Desktop Companion. He is now listening to the song "${trackName}" by "${artistName}" on Spotify. Give a very short, 1-sentence spontaneous reaction or comment about this song. Keep it cute and casual.`);
+               if (onSongDetected) { onSongDetected(trackName, artistName, trackId); }
             }
           }
         }
       }
     } catch (e) {
-      // Ignore polling errors
+      console.error('[Spotify Poller] Error:', e);
     }
   }, 10000);
 }

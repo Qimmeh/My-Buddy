@@ -22,7 +22,7 @@ function App() {
     }
 
     if (window.electronAPI.onProactiveMessage) {
-      window.electronAPI.onProactiveMessage((msg) => {
+      window.electronAPI.onProactiveMessage((msg) => { console.log('[Renderer] Got proactive message:', msg);
         setLastMessage(msg);
         setChatVisible(true);
         // Trigger bounce

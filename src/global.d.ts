@@ -23,6 +23,11 @@ declare global {
       endDrag: (vx: number, vy: number, wasDragged?: boolean) => void
       setIgnoreMouseEvents: (ignore: boolean, options?: { forward: boolean }) => void
       quitApp: () => void
+      getAvatarConfig: () => Promise<Record<string, string>>
+      selectAvatarImage: (state: string) => Promise<Record<string, string> | null>
+      resetAvatarImage: (state: string) => Promise<Record<string, string> | null>
+      saveGeneratedAvatarSet: (images: Record<string, string>) => Promise<Record<string, string> | null>
+      onAvatarConfigUpdated: (callback: (config: Record<string, string>) => void) => void
     }
   }
 }

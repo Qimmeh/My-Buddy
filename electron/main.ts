@@ -5,6 +5,7 @@ import { dirname } from 'node:path'
 import { startRamGuard } from './ramGuard.js'
 import { startAiService } from './aiService.js'
 import { saveSpotifyConfig, authenticateSpotify, loadSpotifyConfig } from './spotifyService.js'
+import { getAvatarConfig, selectAndCopyAvatarImage, resetAvatarImage, saveGeneratedAvatarSet } from './avatarService.js'
 
 loadSpotifyConfig()
 
@@ -204,4 +205,41 @@ ipcMain.handle('get-spotify-config', async () => { return loadSpotifyConfig() })
 ipcMain.on('authenticate-spotify', (event) => {
   const w = BrowserWindow.fromWebContents(event.sender)
   if (w) authenticateSpotify(w).catch(console.error)
+})
+
+// Avatar IPCs
+ipcMain.handle('get-avatar-config', async () => {
+  return await getAvatarConfig()
+})
+
+ipcMain.handle('select-avatar-image', async (event, state) => {
+  const w = BrowserWindow.fromWebContents(event.sender)
+  if (w) {
+    const config = await selectAndCopyAvatarImage(w, state)
+    if (config) {
+      w.webContents.send('avatar-config-updated', config)
+    }
+    return config
+  }
+  return null
+})
+
+ipcMain.handle('reset-avatar-image', async (event, state) => {
+  const w = BrowserWindow.fromWebContents(event.sender)
+  if (w) {
+    const config = await resetAvatarImage(state)
+    w.webContents.send('avatar-config-updated', config)
+    return config
+  }
+  return null
+})
+
+ipcMain.handle('save-generated-avatar-set', async (event, images) => {
+  const w = BrowserWindow.fromWebContents(event.sender)
+  if (w) {
+    const config = await saveGeneratedAvatarSet(images)
+    w.webContents.send('avatar-config-updated', config)
+    return config
+  }
+  return null
 })

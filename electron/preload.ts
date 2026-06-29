@@ -20,4 +20,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   endDrag: (vx: number, vy: number, wasDragged?: boolean) => ipcRenderer.send('end-drag', vx, vy, wasDragged),
   setIgnoreMouseEvents: (ignore: boolean, options?: { forward: boolean }) => ipcRenderer.send('set-ignore-mouse-events', ignore, options),
   quitApp: () => ipcRenderer.send('quit-app'),
+  
+  // Avatar config
+  getAvatarConfig: () => ipcRenderer.invoke('get-avatar-config'),
+  selectAvatarImage: (state: string) => ipcRenderer.invoke('select-avatar-image', state),
+  resetAvatarImage: (state: string) => ipcRenderer.invoke('reset-avatar-image', state),
+  saveGeneratedAvatarSet: (images: Record<string, string>) => ipcRenderer.invoke('save-generated-avatar-set', images),
+  onAvatarConfigUpdated: (callback: (config: Record<string, string>) => void) =>
+    ipcRenderer.on('avatar-config-updated', (_event, value) => callback(value)),
 })

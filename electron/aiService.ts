@@ -1,13 +1,14 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import * as fs from 'node:fs'
 import { join, dirname } from 'node:path'
+import * as http from 'node:http'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const HISTORY_FILE = join(__dirname, '../../chat_history.json')
-const MEMORY_STORE_FILE = join(__dirname, '../../memory_store.json')
-const MEMORY_BOX_FILE = join(__dirname, '../../memory_box.json')
-const OLLAMA_API = 'http://localhost:11434/api/chat'
+const HISTORY_FILE = join(__dirname, '../chat_history.json')
+const MEMORY_STORE_FILE = join(__dirname, '../memory_store.json')
+const MEMORY_BOX_FILE = join(__dirname, '../memory_box.json')
+const OLLAMA_API = 'http://127.0.0.1:11434/api/chat'
 const MODEL_NAME = 'llama3'
 const MAX_MEMORY = 50
 
@@ -77,9 +78,10 @@ function loadMemoryStore(): MemoryStore {
 
 function saveMemoryStore() {
   try {
+    console.log('[Memory] Saving to:', MEMORY_STORE_FILE);
     fs.writeFileSync(MEMORY_STORE_FILE, JSON.stringify(memoryStore, null, 2))
   } catch (e) {
-    console.error('Failed to save memory store', e)
+    console.error('[Memory] Failed to save:', MEMORY_STORE_FILE, e)
   }
 }
 
@@ -195,21 +197,64 @@ let lastActiveWindow = ''
 
 export function startAiService(win: BrowserWindow) {
   loadMemory()
+  
+  // Diagnostic: test if main process can reach Ollama
+  var req = http.request({ hostname: '127.0.0.1', port: 11434, path: '/api/tags', method: 'GET' }, function(res) {
+    var data = '';
+    res.on('data', function(c) { data += c; });
+    res.on('end', function() {
+      try {
+        var d = JSON.parse(data);
+        var names = (d.models || []).map(function(m) { return m.name; }).join(', ');
+        console.log('[Diagnostic] Ollama reachable, models:', names);
+      } catch(e) { console.error('[Diagnostic] Parse error:', e.message); }
+    });
+  });
+  req.on('error', function(e) { console.error('[Diagnostic] Ollama unreachable:', e.message); });
+  req.end();
 
   const triggerSpontaneousComment = async (systemPrompt: string) => {
+    console.log('[Spontaneous] Calling Ollama with:', systemPrompt.substring(0, 80) + '...');
     try {
-      const res = await fetch(OLLAMA_API, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: MODEL_NAME,
-          messages: [{ role: 'system', content: systemPrompt }],
-          stream: false
-        })
-      })
-      if (res.ok) {
-        const data: any = await res.json()
-        win.webContents.send('proactive-message', data.message.content)
+      const postData = JSON.stringify({
+        model: MODEL_NAME,
+        messages: [{ role: 'system', content: systemPrompt }],
+        stream: false
+      });
+      console.log('[Spontaneous] POST body size:', postData.length);
+      const result = await new Promise<string>(function(resolve, reject) {
+        var req = http.request({
+          hostname: '127.0.0.1',
+          port: 11434,
+          path: '/api/chat',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        }, function(res) {
+          var body = '';
+          res.on('data', function(chunk) { body += chunk; });
+          res.on('end', function() { resolve(body); });
+          res.on('error', function(e) { reject(e); });
+        });
+        req.on('error', function(e) { reject(e); });
+        var timer = setTimeout(function() {
+          console.log('[Spontaneous] Request timed out, destroying');
+          req.destroy();
+          reject(new Error('Timeout'));
+        }, 25000);
+        req.on('response', function() {
+          console.log('[Spontaneous] Got response headers, clearing timeout');
+          clearTimeout(timer);
+        });
+        req.write(postData);
+        req.end();
+      });
+      console.log('[Spontaneous] Got response, parsing...');
+      const parsed = JSON.parse(result);
+      if (parsed.message && parsed.message.content) {
+        console.log('[Spontaneous] Ollama replied, sending to renderer:', parsed.message.content.substring(0, 60));
+        win.webContents.send('proactive-message', parsed.message.content);
+      } else {
+        console.error('[Spontaneous] Unexpected Ollama response:', result.substring(0, 200));
       }
     } catch (e) {
       console.error('Failed spontaneous reaction', e)
@@ -231,7 +276,10 @@ export function startAiService(win: BrowserWindow) {
     }
   }, 15000)
 
-  startSpotifyPoller(win, triggerSpontaneousComment)
+  startSpotifyPoller(win, triggerSpontaneousComment, function(name, artist, trackId) {
+    console.log('[Memory] Poller detected song:', name, 'by', artist);
+    incrementSongPlay(name, artist, 'spotify:track:' + trackId);
+  })
 
   // ====== IPC Handlers ======
 
@@ -341,6 +389,7 @@ export function startAiService(win: BrowserWindow) {
 }
 
 function incrementSongPlay(name: string, artist: string, uri: string) {
+  console.log('[Memory] incrementSongPlay:', name, 'by', artist, 'uri:', uri);
   if (memoryStore.songPlays[uri]) {
     memoryStore.songPlays[uri].count++
     memoryStore.songPlays[uri].name = name

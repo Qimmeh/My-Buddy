@@ -21,6 +21,54 @@ export function SettingsMenu({ isVisible, onClose }: SettingsMenuProps) {
   const [activeMemoryTab, setActiveMemoryTab] = useState<MemoryTab>(null);
   const [playlistName, setPlaylistName] = useState('');
   const [playlistUri, setPlaylistUri] = useState('');
+  const [avatarConfig, setAvatarConfig] = useState<Record<string, string>>({});
+  const [currentView, setCurrentView] = useState<'main' | 'avatar'>('main');
+
+  const generateWalkingSet = (file: File, isRightFacing: boolean) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        
+        const generateFrame = (mirror: boolean, squish: boolean) => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.save();
+          if (mirror) {
+            ctx.scale(-1, 1);
+            ctx.translate(-canvas.width, 0);
+          }
+          if (squish) {
+            ctx.translate(0, canvas.height * 0.05); // move down 5%
+            ctx.scale(1, 0.95);
+          }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          ctx.restore();
+          return canvas.toDataURL('image/png');
+        };
+
+        const left1 = generateFrame(isRightFacing, false);
+        const left2 = generateFrame(isRightFacing, true);
+        const right1 = generateFrame(!isRightFacing, false);
+        const right2 = generateFrame(!isRightFacing, true);
+
+        window.electronAPI.saveGeneratedAvatarSet({
+          'walking-left': left1,
+          'walking-left-2': left2,
+          'walking-right': right1,
+          'walking-right-2': right2
+        }).then(config => {
+          if (config) setAvatarConfig(config);
+        });
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   React.useEffect(() => {
     if (isVisible) {
@@ -34,6 +82,13 @@ export function SettingsMenu({ isVisible, onClose }: SettingsMenuProps) {
       // Load memory store
       if (window.electronAPI.getMemoryStore) {
         window.electronAPI.getMemoryStore().then(setMemoryStore).catch(console.error);
+      }
+      // Load avatar config
+      if (window.electronAPI.getAvatarConfig) {
+        window.electronAPI.getAvatarConfig().then(setAvatarConfig).catch(console.error);
+        window.electronAPI.onAvatarConfigUpdated((config) => {
+          setAvatarConfig(config);
+        });
       }
     }
   }, [isVisible]);
@@ -129,7 +184,8 @@ export function SettingsMenu({ isVisible, onClose }: SettingsMenuProps) {
         </button>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {currentView === 'main' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
 
         {/* ===== Memory Overview ===== */}
         <div>
@@ -168,7 +224,7 @@ export function SettingsMenu({ isVisible, onClose }: SettingsMenuProps) {
                   flex: 1
                 }}
               >
-                {tab === 'songs' ? Songs () : tab === 'playlists' ? Playlists () : Facts ()}
+                {tab === 'songs' ? 'Songs (' + sortedSongs.length + ')' : tab === 'playlists' ? 'Playlists (' + (memoryStore ? memoryStore.playlists.length : 0) + ')' : 'Facts (' + (memoryStore ? memoryStore.facts.length : 0) + ')'}
               </button>
             ))}
           </div>
@@ -295,6 +351,22 @@ export function SettingsMenu({ isVisible, onClose }: SettingsMenuProps) {
 
         <hr style={sectionDivider} />
 
+        {/* ===== Avatar Settings Button ===== */}
+        <div>
+          <strong>Avatar Settings</strong>
+          <p style={{ margin: '4px 0 8px 0', fontSize: '0.8rem', color: '#ccc' }}>
+            Customize your buddy's appearance and animations.
+          </p>
+          <button 
+            onClick={() => setCurrentView('avatar')}
+            style={{ ...btnStyle, width: '100%', padding: '8px' }}
+          >
+            Edit Avatar
+          </button>
+        </div>
+
+        <hr style={sectionDivider} />
+
         {/* ===== Engine Info ===== */}
         <div>
           <strong>Local AI Engine</strong>
@@ -303,6 +375,78 @@ export function SettingsMenu({ isVisible, onClose }: SettingsMenuProps) {
           </p>
         </div>
       </div>
+      )}
+
+      {currentView === 'avatar' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <button onClick={() => setCurrentView('main')} style={{ ...btnStyle, alignSelf: 'flex-start', background: 'rgba(255,255,255,0.1)' }}>
+            &larr; Back
+          </button>
+          
+          <div>
+            <strong>Smart Walking Generator</strong>
+            <p style={{ margin: '4px 0 8px 0', fontSize: '0.75rem', color: '#ccc' }}>
+              Upload one image. We'll automatically generate the bounce animation (frame 2) and mirror it for the opposite direction!
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ ...btnStyle, textAlign: 'center', cursor: 'pointer', background: 'rgba(50, 150, 255, 0.8)' }}>
+                Generate from LEFT-facing image
+                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
+                  if (e.target.files && e.target.files[0]) generateWalkingSet(e.target.files[0], false);
+                  e.target.value = '';
+                }} />
+              </label>
+              <label style={{ ...btnStyle, textAlign: 'center', cursor: 'pointer', background: 'rgba(50, 150, 255, 0.8)' }}>
+                Generate from RIGHT-facing image
+                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
+                  if (e.target.files && e.target.files[0]) generateWalkingSet(e.target.files[0], true);
+                  e.target.value = '';
+                }} />
+              </label>
+            </div>
+          </div>
+
+          <hr style={sectionDivider} />
+
+          <div>
+            <strong>Manual Config</strong>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
+              {[
+                'idle', 'active', 'very-active', 'ready', 'thinking', 
+                'walking-left', 'walking-left-2', 'walking-right', 'walking-right-2',
+                'paused', 'dizzy'
+              ].map(state => (
+                <div key={state} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.3)', padding: '6px', borderRadius: '8px' }}>
+                  <span style={{ fontSize: '0.75rem', textTransform: 'capitalize' }}>{state.replace(/-/g, ' ')}</span>
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    {avatarConfig[state] && (
+                      <img 
+                        src={`file://${avatarConfig[state]}`} 
+                        alt={state} 
+                        style={{ width: '20px', height: '20px', objectFit: 'contain', borderRadius: '4px' }} 
+                      />
+                    )}
+                    <button 
+                      onClick={() => window.electronAPI.selectAvatarImage(state)}
+                      style={{ ...btnStyle, fontSize: '0.65rem', padding: '2px 6px' }}
+                    >
+                      Set
+                    </button>
+                    {avatarConfig[state] && (
+                      <button 
+                        onClick={() => window.electronAPI.resetAvatarImage(state)}
+                        style={{ ...btnStyle, fontSize: '0.65rem', padding: '2px 6px', background: 'rgba(255, 50, 50, 0.4)' }}
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

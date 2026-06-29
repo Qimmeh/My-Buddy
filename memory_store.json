@@ -1,0 +1,43 @@
+{
+  "songPlays": {
+    "spotify:track:6kyH1z6IdLo1GH3EcZXHMa": {
+      "name": "小孩",
+      "artist": "罗森涛",
+      "uri": "spotify:track:6kyH1z6IdLo1GH3EcZXHMa",
+      "count": 1
+    },
+    "spotify:track:3pf5M9sxSecmhjT9gMPwe9": {
+      "name": "Like That",
+      "artist": "keshi",
+      "uri": "spotify:track:3pf5M9sxSecmhjT9gMPwe9",
+      "count": 1
+    },
+    "spotify:track:4gM814NneKElxn37F5Ht7G": {
+      "name": "Last Dance",
+      "artist": "Eve",
+      "uri": "spotify:track:4gM814NneKElxn37F5Ht7G",
+      "count": 1
+    },
+    "spotify:track:3ZsPujeG0eWb4o3VkrHKd5": {
+      "name": "妳聽得到",
+      "artist": "Jay Chou",
+      "uri": "spotify:track:3ZsPujeG0eWb4o3VkrHKd5",
+      "count": 3
+    },
+    "spotify:track:3E8mVyS6bb9uLnlCVKstDI": {
+      "name": "Nvmd",
+      "artist": "Kotlin",
+      "uri": "spotify:track:3E8mVyS6bb9uLnlCVKstDI",
+      "count": 2
+    }
+  },
+  "playlists": [
+    {
+      "name": "My Favorite",
+      "uri": "spotify:playlist:0doi0FJA6YIkkf6QErB5Q3"
+    }
+  ],
+  "facts": [
+    "User is currently looking at: my-buddy"
+  ]
+}

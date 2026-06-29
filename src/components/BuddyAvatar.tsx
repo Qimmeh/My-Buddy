@@ -19,21 +19,50 @@ interface BuddyAvatarProps {
 }
 
 export function BuddyAvatar({ state, onClick, onContextMenu, isBouncing, onPointerDown, onPointerMove, onPointerUp }: BuddyAvatarProps) {
-  const [currentImage, setCurrentImage] = useState(idleImg);
+  const [avatarConfig, setAvatarConfig] = useState<Record<string, string>>({});
+  const [animFrame, setAnimFrame] = useState(0);
 
+  // Load avatar config
   useEffect(() => {
-    switch (state) {
-      case 'idle': setCurrentImage(idleImg); break;
-      case 'active': setCurrentImage(activeImg); break;
-      case 'ready': setCurrentImage(readyImg); break;
-      case 'thinking': setCurrentImage(thinkingImg); break;
-      case 'walking-left': setCurrentImage(walkLeftImg); break;
-      case 'walking-right': setCurrentImage(walkRightImg); break;
-      case 'paused': setCurrentImage(pausedImg); break;
-      case 'dizzy': setCurrentImage(angryDizzyImg); break;
-      default: setCurrentImage(idleImg);
+    if (window.electronAPI.getAvatarConfig) {
+      window.electronAPI.getAvatarConfig().then(setAvatarConfig).catch(console.error);
+      window.electronAPI.onAvatarConfigUpdated(setAvatarConfig);
+    }
+  }, []);
+
+  // Animation loop for walking
+  useEffect(() => {
+    if (state === 'walking-left' || state === 'walking-right') {
+      const interval = setInterval(() => {
+        setAnimFrame(f => (f === 0 ? 1 : 0));
+      }, 250); // 250ms per frame
+      return () => clearInterval(interval);
+    } else {
+      setAnimFrame(0);
     }
   }, [state]);
+
+  // Determine current image
+  let finalState = state as string;
+  if (state === 'walking-left' && animFrame === 1) finalState = 'walking-left-2';
+  if (state === 'walking-right' && animFrame === 1) finalState = 'walking-right-2';
+
+  // Some states have aliases for the defaults
+  const defaults: Record<string, string> = {
+    'idle': idleImg,
+    'active': activeImg,
+    'ready': readyImg,
+    'thinking': thinkingImg,
+    'walking-left': walkLeftImg,
+    'walking-left-2': walkLeftImg, // fallback to normal walk if no frame 2
+    'walking-right': walkRightImg,
+    'walking-right-2': walkRightImg, // fallback to normal walk if no frame 2
+    'paused': pausedImg,
+    'dizzy': angryDizzyImg,
+    'very-active': thinkingImg // fallback if very active not set
+  };
+
+  const currentImage = avatarConfig[finalState] ? `file://${avatarConfig[finalState]}` : defaults[finalState] || idleImg;
 
   return (
     <div 
