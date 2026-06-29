@@ -125,10 +125,10 @@ function App() {
         const maxV = 40;
         const clampedVx = Math.max(-maxV, Math.min(maxV, dragInfo.current.vx));
         const clampedVy = Math.max(-maxV, Math.min(maxV, dragInfo.current.vy));
-        window.electronAPI.endDrag(clampedVx, clampedVy);
+        window.electronAPI.endDrag(clampedVx, clampedVy, true);
       } else {
         // It was just a click. We MUST send endDrag(0,0) to release her physics!
-        window.electronAPI.endDrag(0, 0);
+        window.electronAPI.endDrag(0, 0, false);
       }
     }
   };

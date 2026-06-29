@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   authenticateSpotify: () => ipcRenderer.send('authenticate-spotify'),
   resizeWindow: (mode: 'avatar' | 'full') => ipcRenderer.send('resize-window', mode),
   dragWindow: (dx: number, dy: number) => ipcRenderer.send('drag-window', dx, dy),
-  endDrag: (vx: number, vy: number) => ipcRenderer.send('end-drag', vx, vy),
+  endDrag: (vx: number, vy: number, wasDragged?: boolean) => ipcRenderer.send('end-drag', vx, vy, wasDragged),
+  setIgnoreMouseEvents: (ignore: boolean, options?: { forward: boolean }) => ipcRenderer.send('set-ignore-mouse-events', ignore, options),
   quitApp: () => ipcRenderer.send('quit-app'),
 })

@@ -13,7 +13,8 @@ declare global {
       authenticateSpotify: () => void
       resizeWindow: (mode: 'avatar' | 'full') => void
       dragWindow: (dx: number, dy: number) => void
-      endDrag: (vx: number, vy: number) => void
+      endDrag: (vx: number, vy: number, wasDragged?: boolean) => void
+      setIgnoreMouseEvents: (ignore: boolean, options?: { forward: boolean }) => void
       quitApp: () => void
     }
   }

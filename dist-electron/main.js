@@ -484,144 +484,157 @@ var vx = 2, vy = 1.5;
 var isGrabbed = false;
 var isThrown = false;
 var isRespawning = false;
-var isPaused = false;
 var currentMode = "avatar";
 var lastSendState = "";
+var AVATAR_SIZE = 45;
 function sendState(state) {
 	if (win && !win.isDestroyed() && lastSendState !== state) {
 		lastSendState = state;
 		win.webContents.send("ai-state-change", state);
 	}
 }
-var respawnEdge = "top";
 function startPhysicsLoop() {
-	const frameTime = 1e3 / 60;
-	vx = 1;
-	vy = 1;
 	setInterval(() => {
-		if (!win || win.isDestroyed() || currentMode === "full" || isGrabbed || isRespawning) return;
-		const displays = screen.getAllDisplays();
-		let minX = 0, minY = 0, maxX = 0, maxY = 0;
-		if (displays.length > 0) {
-			minX = Math.min(...displays.map((d) => d.workArea.x));
-			minY = Math.min(...displays.map((d) => d.workArea.y));
-			maxX = Math.max(...displays.map((d) => d.workArea.x + d.workArea.width));
-			maxY = Math.max(...displays.map((d) => d.workArea.y + d.workArea.height));
-		}
-		const bounds = {
-			x: minX,
-			y: minY,
-			width: maxX - minX,
-			height: maxY - minY
-		};
-		const w = 45, h = 45;
-		if (!isPaused && !isThrown) {
-			px += vx;
-			py += vy;
-			if (px <= bounds.x) {
-				px = bounds.x;
-				vx = Math.abs(vx) || 1;
-				vy = (Math.random() > .5 ? 1 : -1) * (.8 + Math.random() * .4);
-				console.log(`[BOUNCE] Left edge hit at px:${px}, bounds.x:${bounds.x}`);
-			} else if (px + w >= bounds.x + bounds.width) {
-				px = bounds.x + bounds.width - w;
-				vx = -(Math.abs(vx) || 1);
-				vy = (Math.random() > .5 ? 1 : -1) * (.8 + Math.random() * .4);
-				console.log(`[BOUNCE] Right edge hit at px:${px + w}, bounds.right:${bounds.x + bounds.width}`);
+		try {
+			if (!win || win.isDestroyed() || currentMode === "full" || isGrabbed || isRespawning) return;
+			if (!isFinite(px)) px = 0;
+			if (!isFinite(py)) py = 0;
+			if (!isFinite(vx)) vx = 0;
+			if (!isFinite(vy)) vy = 0;
+			let w;
+			try {
+				w = screen.getDisplayNearestPoint({
+					x: Math.round(px),
+					y: Math.round(py)
+				}).workArea;
+			} catch (e) {
+				w = screen.getPrimaryDisplay().workArea;
 			}
-			if (py <= bounds.y) {
-				py = bounds.y;
-				vy = Math.abs(vy) || 1;
-				vx = (Math.random() > .5 ? 1 : -1) * (.8 + Math.random() * .4);
-				console.log(`[BOUNCE] Top edge hit at py:${py}, bounds.y:${bounds.y}`);
-			} else if (py + h >= bounds.y + bounds.height) {
-				py = bounds.y + bounds.height - h;
-				vy = -(Math.abs(vy) || 1);
-				vx = (Math.random() > .5 ? 1 : -1) * (.8 + Math.random() * .4);
-				console.log(`[BOUNCE] Bottom edge hit at py:${py + h}, bounds.bottom:${bounds.y + bounds.height}`);
-			}
-			sendState(vx > 0 ? "walking-right" : "walking-left");
-		} else if (isThrown) {
-			px += vx;
-			py += vy;
-			vy += .5;
-			vx *= .98;
-			let outOfBounds = false;
-			if (px + w < bounds.x) {
-				outOfBounds = true;
-				respawnEdge = "left";
-			} else if (px > bounds.x + bounds.width) {
-				outOfBounds = true;
-				respawnEdge = "right";
-			} else if (py + h < bounds.y) {
-				outOfBounds = true;
-				respawnEdge = "top";
-			} else if (py > bounds.y + bounds.height + 50) {
-				outOfBounds = true;
-				respawnEdge = "bottom";
-			}
-			if (outOfBounds) {
-				isThrown = false;
-				isRespawning = true;
-				win.hide();
-				setTimeout(() => {
-					if (respawnEdge === "left") {
-						px = bounds.x - w;
-						py = bounds.y + bounds.height / 3;
-						vx = 8;
-						vy = -5;
-					} else if (respawnEdge === "right") {
-						px = bounds.x + bounds.width;
-						py = bounds.y + bounds.height / 3;
-						vx = -8;
-						vy = -5;
-					} else if (respawnEdge === "top") {
-						px = bounds.x + bounds.width / 2;
-						py = bounds.y - h;
-						vx = 0;
-						vy = 5;
-					} else {
-						px = bounds.x + bounds.width / 2;
-						py = bounds.y + bounds.height;
-						vx = 0;
-						vy = -15;
-					}
-					isRespawning = false;
-					isThrown = true;
-					sendState("dizzy");
-					win?.show();
-				}, 3e3);
-			} else {
-				if (py + h >= bounds.y + bounds.height && vy > 0) {
-					py = bounds.y + bounds.height - h;
-					vy = -vy * .6;
-					if (Math.abs(vy) < 2) {
-						isThrown = false;
-						vy = 1;
-						vx = vx > 0 ? 1 : -1;
-					}
+			if (!w || !isFinite(w.x) || !isFinite(w.y) || !isFinite(w.width) || !isFinite(w.height) || w.width <= 0 || w.height <= 0) {
+				try {
+					w = screen.getPrimaryDisplay().workArea;
+				} catch (e2) {}
+				if (!w || !isFinite(w.x) || !isFinite(w.y) || !isFinite(w.width) || !isFinite(w.height) || w.width <= 0 || w.height <= 0) {
+					win.setPosition(Math.round(px), Math.round(py));
+					return;
 				}
-				sendState("dizzy");
 			}
+			if (isThrown) {
+				try {
+					vy += .5;
+					vx *= .98;
+					px += vx;
+					py += vy;
+					if (py + AVATAR_SIZE >= w.y + w.height) {
+						py = w.y + w.height - AVATAR_SIZE;
+						vy = -vy * .6;
+						if (Math.abs(vy) < 2) {
+							vy = 0;
+							vx = 0;
+							isThrown = false;
+							sendState("dizzy");
+							setTimeout(() => {
+								if (!isThrown && !isGrabbed && !isRespawning) {
+									vx = (Math.random() > .5 ? 1 : -1) * (1.5 + Math.random());
+									vy = (Math.random() > .5 ? 1 : -1) * (.8 + Math.random() * .4);
+									if (!isFinite(vx)) vx = 1.5;
+									if (!isFinite(vy)) vy = .8;
+								}
+							}, 1500);
+							win.setPosition(Math.round(px), Math.round(py));
+							return;
+						}
+					}
+					if (px <= w.x) {
+						px = w.x;
+						vx = -vx * .6;
+					} else if (px + AVATAR_SIZE >= w.x + w.width) {
+						px = w.x + w.width - AVATAR_SIZE;
+						vx = -vx * .6;
+					}
+					if (py <= w.y) {
+						py = w.y;
+						vy = -vy * .6;
+					}
+					if (px < w.x - AVATAR_SIZE || px > w.x + w.width || py < w.y - AVATAR_SIZE || py > w.y + w.height) {
+						startRespawn(w);
+						return;
+					}
+					sendState("dizzy");
+					win.setPosition(Math.round(px), Math.round(py));
+				} catch (e) {
+					win.setPosition(Math.round(px), Math.round(py));
+				}
+				return;
+			}
+			px += vx;
+			py += vy;
+			if (!isFinite(px)) px = 0;
+			if (!isFinite(py)) py = 0;
+			let bounced = false;
+			if (px <= w.x) {
+				px = w.x;
+				vx = -vx;
+				bounced = true;
+			} else if (px + AVATAR_SIZE >= w.x + w.width) {
+				px = w.x + w.width - AVATAR_SIZE;
+				vx = -vx;
+				bounced = true;
+			}
+			if (py <= w.y) {
+				py = w.y;
+				vy = -vy;
+				bounced = true;
+			} else if (py + AVATAR_SIZE >= w.y + w.height) {
+				py = w.y + w.height - AVATAR_SIZE;
+				vy = -vy;
+				bounced = true;
+			}
+			if (bounced) {
+				vx = (vx > 0 ? 1 : -1) * (1.5 + Math.random() * 1);
+				vy = (vy > 0 ? 1 : -1) * (.8 + Math.random() * .4);
+				if (!isFinite(vx)) vx = (Math.random() > .5 ? 1 : -1) * 1.5;
+				if (!isFinite(vy)) vy = (Math.random() > .5 ? 1 : -1) * .8;
+			}
+			if (vx > .5) sendState("walking-right");
+			else if (vx < -.5) sendState("walking-left");
+			else sendState("idle");
+			win.setPosition(Math.round(px), Math.round(py));
+		} catch (e) {}
+	}, 1e3 / 60);
+}
+function startRespawn(workArea) {
+	isRespawning = true;
+	isThrown = false;
+	win?.hide();
+	if (py < workArea.y) {
+		py = workArea.y - AVATAR_SIZE;
+		vy = 15;
+	} else if (py > workArea.y + workArea.height) {
+		py = workArea.y + workArea.height;
+		vy = -15;
+	} else vy = 0;
+	if (px < workArea.x) {
+		px = workArea.x - AVATAR_SIZE;
+		vx = 15;
+	} else if (px > workArea.x + workArea.width) {
+		px = workArea.x + workArea.width;
+		vx = -15;
+	} else vx = 0;
+	setTimeout(() => {
+		isRespawning = false;
+		isThrown = true;
+		if (win && !win.isDestroyed()) {
+			win.setPosition(Math.round(px), Math.round(py));
+			win.show();
+			sendState("dizzy");
 		}
-		win.setPosition(Math.round(px), Math.round(py));
-	}, frameTime);
-	setInterval(() => {
-		if (currentMode === "avatar" && !isGrabbed && !isThrown && !isRespawning) {
-			isPaused = true;
-			sendState("paused");
-			setTimeout(() => {
-				isPaused = false;
-				vx = (Math.random() > .5 ? 1 : -1) * (.8 + Math.random() * .4);
-				vy = (Math.random() > .5 ? 1 : -1) * (.8 + Math.random() * .4);
-			}, 3e3 + Math.random() * 4e3);
-		}
-	}, 1e4 + Math.random() * 1e4);
+	}, 3e3);
 }
 function createWindow() {
 	win = new BrowserWindow({
-		width: 300,
-		height: 400,
+		width: AVATAR_SIZE,
+		height: AVATAR_SIZE,
 		show: false,
 		frame: false,
 		transparent: true,
@@ -629,6 +642,8 @@ function createWindow() {
 		alwaysOnTop: true,
 		resizable: false,
 		hasShadow: false,
+		minWidth: 0,
+		minHeight: 0,
 		webPreferences: {
 			preload,
 			nodeIntegration: true,
@@ -669,18 +684,24 @@ function createTray() {
 function toggleWindow() {
 	if (!win) return;
 	if (win.isVisible()) win.hide();
-	else win.show();
+	else {
+		win.show();
+		isRespawning = false;
+	}
 }
 ipcMain.on("resize-window", (_event, mode) => {
 	if (!win || win.isDestroyed()) return;
 	currentMode = mode;
-	const { workArea } = screen.getPrimaryDisplay();
+	const { workArea } = screen.getDisplayNearestPoint({
+		x: Math.round(px),
+		y: Math.round(py)
+	});
 	if (mode === "avatar") {
 		win.setBounds({
 			x: Math.round(px),
 			y: Math.round(py),
-			width: 45,
-			height: 45
+			width: AVATAR_SIZE,
+			height: AVATAR_SIZE
 		});
 		isThrown = false;
 		isGrabbed = false;
@@ -708,20 +729,24 @@ ipcMain.on("drag-window", (_event, dx, dy) => {
 		win?.setBounds({
 			x: Math.round(px),
 			y: Math.round(py),
-			width: 45,
-			height: 45
+			width: AVATAR_SIZE,
+			height: AVATAR_SIZE
 		});
 	}
 });
-ipcMain.on("end-drag", (_event, dragVx, dragVy) => {
+ipcMain.on("end-drag", (_event, dragVx, dragVy, wasDragged = true) => {
 	if (currentMode === "avatar" && isGrabbed) {
 		isGrabbed = false;
-		if (Math.abs(dragVx) > 5 || Math.abs(dragVy) > 5) {
+		if (wasDragged) {
 			isThrown = true;
 			vx = dragVx;
 			vy = dragVy;
 		}
 	}
+});
+ipcMain.on("set-ignore-mouse-events", (_event, ignore, options) => {
+	if (win && !win.isDestroyed()) if (options) win.setIgnoreMouseEvents(ignore, options);
+	else win.setIgnoreMouseEvents(ignore);
 });
 app.whenReady().then(() => {
 	createWindow();
@@ -729,12 +754,12 @@ app.whenReady().then(() => {
 	if (win) {
 		const { workArea } = screen.getPrimaryDisplay();
 		px = Math.round(workArea.x + workArea.width / 2);
-		py = Math.round(workArea.y + workArea.height / 2);
+		py = Math.round(workArea.y + workArea.height * .3);
 		win.setBounds({
 			x: px,
 			y: py,
-			width: 45,
-			height: 45
+			width: AVATAR_SIZE,
+			height: AVATAR_SIZE
 		});
 		win.setAlwaysOnTop(true, "screen-saver");
 	}
