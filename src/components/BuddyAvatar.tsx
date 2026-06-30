@@ -108,7 +108,7 @@ export function BuddyAvatar({ state, onClick, onContextMenu, isBouncing, onPoint
             borderBottomRightRadius: '8px',
             padding: '1px 6px',
             fontSize: '0.5rem',
-            color: 'var(--neon-purple)',
+            color: 'var(--theme-color)',
             textAlign: 'center',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
@@ -127,8 +127,8 @@ export function BuddyAvatar({ state, onClick, onContextMenu, isBouncing, onPoint
           maxHeight: '100%',
           objectFit: 'contain',
           filter: isHovered 
-            ? 'drop-shadow(0px 0px 8px rgba(180, 80, 255, 0.9)) brightness(1.15)' 
-            : 'drop-shadow(0px 0px 3px rgba(180, 80, 255, 0.5))',
+            ? 'drop-shadow(0px 0px 8px var(--theme-color)) brightness(1.15)' 
+            : 'drop-shadow(0px 0px 3px var(--theme-color))',
           transition: 'transform 0.3s ease, filter 0.2s ease'
         }}
         draggable="false"

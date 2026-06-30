@@ -7,7 +7,8 @@ import { startRamGuard } from './ramGuard.js'
 import { startAiService } from './aiService.js'
 import { saveSpotifyConfig, authenticateSpotify, loadSpotifyConfig, isSpotifyPlaying } from './spotifyService.js'
 import { getAvatarConfig, selectAndCopyAvatarImage, resetAvatarImage, saveGeneratedAvatarSet } from './avatarService.js'
-import { createBundle, installBundle, listBundles } from './avatarMarketplace.js'
+import { createBundle, installBundle, listBundles, canUploadBundle, deleteBundle } from './avatarMarketplace.js'
+import { getCharacterConfig, saveCharacterConfig } from './characterConfig.js'
 
 loadSpotifyConfig()
 
@@ -283,7 +284,7 @@ function createWindow() {
     hasShadow: false,
     minWidth: 0,
     minHeight: 0,
-    webPreferences: { preload, nodeIntegration: true, contextIsolation: true, backgroundThrottling: false },
+    webPreferences: { preload, nodeIntegration: true, contextIsolation: true, backgroundThrottling: false, webSecurity: false },
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -425,6 +426,46 @@ ipcMain.on('authenticate-spotify', (event) => {
   if (w) authenticateSpotify(w).catch(console.error)
 })
 
+// Character Editor IPCs
+let characterEditorWin: BrowserWindow | null = null;
+ipcMain.on('open-character-editor', () => {
+  if (characterEditorWin && !characterEditorWin.isDestroyed()) {
+    characterEditorWin.focus();
+    return;
+  }
+  
+  characterEditorWin = new BrowserWindow({
+    width: 600,
+    height: 700,
+    show: true,
+    autoHideMenuBar: true,
+    webPreferences: { preload, nodeIntegration: true, contextIsolation: true, webSecurity: false },
+  });
+
+  if (process.env.VITE_DEV_SERVER_URL) {
+    characterEditorWin.loadURL(process.env.VITE_DEV_SERVER_URL + '?window=character-editor');
+  } else {
+    characterEditorWin.loadFile(join(__dirname, '../dist/index.html'), { search: 'window=character-editor' });
+  }
+
+  characterEditorWin.on('closed', () => {
+    characterEditorWin = null;
+  });
+});
+
+ipcMain.handle('get-character-config', async () => {
+  return getCharacterConfig();
+});
+
+ipcMain.handle('save-character-config', async (_event, config) => {
+  saveCharacterConfig(config);
+  // Broadcast update to all windows
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (!w.isDestroyed()) w.webContents.send('character-config-updated', config);
+  });
+  return true;
+});
+
 // Avatar IPCs
 ipcMain.handle('get-avatar-config', async () => {
   return await getAvatarConfig()
@@ -445,8 +486,9 @@ ipcMain.handle('select-avatar-image', async (event, state) => {
 // Marketplace IPCs
 ipcMain.handle('create-bundle', async (_event, name, author, description) => {
   const config = await getAvatarConfig()
+  const charConfig = getCharacterConfig()
   try {
-    const manifest = await createBundle(name, author, description, config)
+    const manifest = await createBundle(name, author, description, config, charConfig)
     return { success: true, manifest }
   } catch (err) {
     return { success: false, error: (err as Error).message }
@@ -455,16 +497,40 @@ ipcMain.handle('create-bundle', async (_event, name, author, description) => {
 
 ipcMain.handle('install-bundle', async (_event, bundleId) => {
   const config = await getAvatarConfig()
-  const newConfig = await installBundle(bundleId, config)
+  const { newConfig, manifest } = await installBundle(bundleId, config)
+  
+  // Also apply character configuration if bundled
+  if (manifest.characterName || manifest.themeColor || manifest.personalityPrompt || manifest.characterTips) {
+    const charConfig = getCharacterConfig()
+    if (manifest.characterName) charConfig.characterName = manifest.characterName;
+    if (manifest.themeColor) charConfig.themeColor = manifest.themeColor;
+    if (manifest.personalityPrompt) charConfig.personalityPrompt = manifest.personalityPrompt;
+    if (manifest.characterTips) charConfig.characterTips = manifest.characterTips;
+    saveCharacterConfig(charConfig);
+    BrowserWindow.getAllWindows().forEach(w => {
+      if (!w.isDestroyed()) w.webContents.send('character-config-updated', charConfig);
+    });
+  }
+
   const { join } = await import('node:path')
   const { promises: fs } = await import('node:fs')
   const CONFIG_PATH = join(app.getPath('userData'), 'avatar-config.json')
   await fs.writeFile(CONFIG_PATH, JSON.stringify(newConfig, null, 2))
+
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (!w.isDestroyed()) w.webContents.send('avatar-config-updated', newConfig)
+  })
+
   return newConfig
 })
 
 ipcMain.handle('list-bundles', async () => {
  return await listBundles()
+})
+
+ipcMain.handle('delete-bundle', async (_event, bundleId) => {
+  await deleteBundle(bundleId)
+  return { success: true }
 })
 
 // User name IPCs

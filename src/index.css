@@ -1,12 +1,13 @@
 .buddy-hovered {
-  filter: brightness(1.2) drop-shadow(0px 0px 8px rgba(180, 80, 255, 0.8)) !important;
+  filter: brightness(1.2) drop-shadow(0px 0px 10px var(--theme-color)) !important;
   transition: filter 0.2s ease;
 }
 :root {
   --neon-cyan: #0ff;
-  --neon-purple: #b026ff;
-  --dark-bg: rgba(15, 15, 20, 0.95);
-  --glass-border: rgba(0, 255, 255, 0.2);
+  --theme-color: #b026ff;
+  --theme-bg-gradient: linear-gradient(135deg, color-mix(in srgb, var(--theme-color) 8%, #0a0a0a), color-mix(in srgb, var(--theme-color) 15%, #151515));
+  --theme-bg-glass: color-mix(in srgb, var(--theme-color) 12%, rgba(15, 15, 20, 0.95));
+  --glass-border: color-mix(in srgb, var(--theme-color) 30%, transparent);
   --text-primary: #fff;
   --text-secondary: #aaa;
 }
@@ -35,7 +36,7 @@ body {
   transform: translateX(-50%);
   border-left: 8px solid transparent;
   border-right: 8px solid transparent;
-  border-top: 8px solid rgba(20, 10, 30, 0.95);
+  border-top: 8px solid var(--theme-bg-glass);
 }
 
 @keyframes bounce-animation {
@@ -76,7 +77,7 @@ body {
   border-radius: 4px;
 }
 .scrollable-menu::-webkit-scrollbar-thumb {
-  background: var(--neon-purple);
+  background: var(--theme-color);
   border-radius: 4px;
 }
 .scrollable-menu::-webkit-scrollbar-thumb:hover {

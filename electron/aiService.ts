@@ -1,13 +1,13 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import * as fs from 'node:fs'
 import { join, dirname } from 'node:path'
 import * as http from 'node:http'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const HISTORY_FILE = join(__dirname, '../chat_history.json')
-const MEMORY_STORE_FILE = join(__dirname, '../memory_store.json')
-const MEMORY_BOX_FILE = join(__dirname, '../memory_box.json')
+const HISTORY_FILE = join(app.getPath('userData'), 'chat_history.json')
+const MEMORY_STORE_FILE = join(app.getPath('userData'), 'memory_store.json')
+const MEMORY_BOX_FILE = join(app.getPath('userData'), 'memory_box.json')
 const OLLAMA_API = 'http://127.0.0.1:11434/api/chat'
 const MODEL_NAME = 'llama3'
 const MAX_MEMORY = 50
@@ -126,14 +126,22 @@ function formatMemoryForPrompt(): string {
 }
 
 // ====== System Prompt ======
+import { getCharacterConfig } from './characterConfig.js'
 
-const SYSTEM_PROMPT = `You are Zi Feng's Desktop Companion. You live in his system tray as Raiden Shogun from Genshin Impact.
-You are a specialized, evolving system AI. Your personality is sleek, helpful, and tech-savvy. You have memory of past conversations.
-
+function getSystemPrompt(): string {
+  const config = getCharacterConfig();
+  let base = `You are the user's Desktop Companion. You are acting as the character ${config.characterName}`;
+  if (config.characterTips) {
+    base += ` (${config.characterTips})`;
+  }
+  base += `.\n${config.personalityPrompt}\nYou have memory of past conversations.\n`;
+  return base + `
 Here is everything you remember about the user:
 
-{MEMORY_BOX}
+{MEMORY_BOX}`;
+}
 
+const SYSTEM_PROMPT_INSTRUCTIONS = `
 === INSTRUCTIONS FOR MUSIC ===
 If the user asks you to play music or open Spotify (especially with a specific song, artist, or playlist), you should reply briefly acknowledging it, and then end your response with one of these tool calls:
 
@@ -271,7 +279,7 @@ export function startAiService(win: BrowserWindow) {
       saveMemoryStore()
 
       if (Math.random() < 0.3) {
-        triggerSpontaneousComment('You are Zi Feng\'s Desktop Companion. He just opened an app called "' + activeWindow + '". Give a very short, 1-sentence spontaneous reaction or comment about it.')
+        triggerSpontaneousComment(getSystemPrompt() + '\n' + SYSTEM_PROMPT_INSTRUCTIONS + '\nThe user just opened an app called "' + activeWindow + '". Give a very short, 1-sentence spontaneous reaction or comment about it.')
       }
     }
   }, 15000)
@@ -295,7 +303,7 @@ export function startAiService(win: BrowserWindow) {
     if (playlists.length > 0) {
       ctx = 'Here are his saved playlists:\n' + playlists.map(function(p) { return '- ' + p.name + ' (' + p.uri + ')'; }).join('\n');
     }
-    triggerSpontaneousComment("You are Zi Feng's Desktop Companion. He is not currently listening to music or playing anything on Spotify. Suggest if he would like to play one of his favorite playlists. " + ctx + ' Keep it short, 1 sentence, casual and cute. Mention a specific playlist name if you know one.');
+    triggerSpontaneousComment(getSystemPrompt() + '\n' + SYSTEM_PROMPT_INSTRUCTIONS + '\nThe user is not currently listening to music or playing anything on Spotify. Suggest if they would like to play one of their favorite playlists. ' + ctx + ' Keep it short, 1 sentence, casual and cute. Mention a specific playlist name if you know one.');
   }, 4 * 60 * 1000);
 
   // ====== IPC Handlers ======
@@ -420,7 +428,7 @@ function incrementSongPlay(name: string, artist: string, uri: string) {
 async function generateOllamaChat(): Promise<string> {
   try {
     const memoryFacts = formatMemoryForPrompt()
-    const currentPrompt = SYSTEM_PROMPT.replace('{MEMORY_BOX}', memoryFacts)
+    const currentPrompt = (getSystemPrompt() + '\n' + SYSTEM_PROMPT_INSTRUCTIONS).replace('{MEMORY_BOX}', memoryFacts)
 
     const messages = [
       { role: 'system', content: currentPrompt },

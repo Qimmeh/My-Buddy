@@ -41,7 +41,7 @@ export function InputTray({ isVisible, onSubmit, onClose }: InputTrayProps) {
       style={{
         width: '100%',
         backgroundColor: 'rgba(10, 5, 20, 0.9)',
-        border: '1px solid var(--neon-purple)',
+        border: '1px solid var(--theme-color)',
         borderRadius: '12px',
         padding: '10px',
         boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
@@ -74,7 +74,7 @@ export function InputTray({ isVisible, onSubmit, onClose }: InputTrayProps) {
         <button 
           type="submit"
           style={{
-            backgroundColor: 'var(--neon-purple)',
+            backgroundColor: 'var(--theme-color)',
             border: 'none',
             borderRadius: '8px',
             color: 'white',

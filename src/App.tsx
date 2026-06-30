@@ -3,6 +3,7 @@ import { BuddyAvatar } from './components/BuddyAvatar';
 import { ChatBubble } from './components/ChatBubble';
 import { InputTray } from './components/InputTray';
 import { SettingsMenu } from './components/SettingsMenu';
+import { CharacterEditor } from './components/CharacterEditor';
 import './index.css';
 
 function App() {
@@ -13,6 +14,22 @@ function App() {
   const [lastMessage, setLastMessage] = useState("Hello! I'm here.");
   const [isBouncing, setIsBouncing] = useState(false);
   const animationLock = useRef<string | null>(null);
+
+  // Load and apply theme color
+  useEffect(() => {
+    if (window.electronAPI.getCharacterConfig) {
+      window.electronAPI.getCharacterConfig().then((config: any) => {
+        if (config && config.themeColor) {
+          document.documentElement.style.setProperty('--theme-color', config.themeColor);
+        }
+      });
+      window.electronAPI.onCharacterConfigUpdated((config: any) => {
+        if (config && config.themeColor) {
+          document.documentElement.style.setProperty('--theme-color', config.themeColor);
+        }
+      });
+    }
+  }, []);
 
   // Alt+Click to navigate buddy to a point
   useEffect(() => {
@@ -261,6 +278,10 @@ function App() {
       setState('idle'); // Offline
     }
   };
+
+  if (window.location.search.includes('window=character-editor')) {
+    return <CharacterEditor />;
+  }
 
   return (
     <div className="app-container" style={{

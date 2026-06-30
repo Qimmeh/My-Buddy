@@ -32,3 +32,6 @@ memory_store.json
 
 # Installers
 *.exe
+
+releases/
+

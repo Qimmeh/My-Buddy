@@ -21,6 +21,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setIgnoreMouseEvents: (ignore: boolean, options?: { forward: boolean }) => ipcRenderer.send('set-ignore-mouse-events', ignore, options),
   quitApp: () => ipcRenderer.send('quit-app'),
   
+  // Character config
+  openCharacterEditor: () => ipcRenderer.send('open-character-editor'),
+  getCharacterConfig: () => ipcRenderer.invoke('get-character-config'),
+  saveCharacterConfig: (config: any) => ipcRenderer.invoke('save-character-config', config),
+  onCharacterConfigUpdated: (callback: (config: any) => void) =>
+    ipcRenderer.on('character-config-updated', (_event, value) => callback(value)),
+
   // Avatar config
   getAvatarConfig: () => ipcRenderer.invoke('get-avatar-config'),
   selectAvatarImage: (state: string) => ipcRenderer.invoke('select-avatar-image', state),
@@ -39,6 +46,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   createBundle: (name: string, author: string, description: string) => ipcRenderer.invoke('create-bundle', name, author, description),
   installBundle: (bundleId: string) => ipcRenderer.invoke('install-bundle', bundleId),
   listBundles: () => ipcRenderer.invoke('list-bundles'),
+  deleteBundle: (bundleId: string) => ipcRenderer.invoke('delete-bundle', bundleId),
 
   // User name
   getUserName: () => ipcRenderer.invoke('get-user-name'),

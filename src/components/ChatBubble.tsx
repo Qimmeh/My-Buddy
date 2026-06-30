@@ -16,14 +16,14 @@ export function ChatBubble({ message, isVisible, onClick, isThinking }: ChatBubb
       onClick={onClick}
       style={{
         backgroundColor: 'rgba(20, 10, 30, 0.85)',
-        border: '1px solid var(--neon-purple)',
+        border: '1px solid var(--theme-color)',
         borderRadius: '16px',
         padding: '12px 16px',
         maxWidth: '250px',
         width: 'max-content',
         color: '#fff',
         fontSize: '0.95rem',
-        boxShadow: '0 4px 15px rgba(180, 38, 255, 0.4)',
+        boxShadow: '0 4px 15px var(--theme-color)',
         cursor: 'pointer',
         WebkitAppRegion: 'no-drag',
         animation: 'fade-in 0.3s ease-out',
@@ -46,7 +46,7 @@ export function ChatBubble({ message, isVisible, onClick, isThinking }: ChatBubb
           height: '0',
           borderLeft: '8px solid transparent',
           borderRight: '8px solid transparent',
-          borderTop: '10px solid var(--neon-purple)',
+          borderTop: '10px solid var(--theme-color)',
         }} />
       </div>
     </div>
