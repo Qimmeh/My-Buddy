@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import BorderGlow from './BorderGlow';
 
 interface MemoryStore {
   songPlays: Record<string, { name: string; artist: string; uri: string; count: number }>;
@@ -106,28 +107,40 @@ export function SettingsMenu({ isVisible, onClose, onTrayIconUpdate }: SettingsM
 
   return (
     <div
-      className="scrollable-menu"
       style={{
         position: 'absolute',
         bottom: '55px',
         left: '50%',
         transform: 'translateX(-50%)',
-        background: 'var(--theme-bg-glass)',
-        border: '1px solid var(--theme-color)',
-        borderRadius: '16px',
-        padding: '16px',
         width: '280px',
         maxHeight: '320px',
-        overflowY: 'auto',
-        color: '#fff',
-        fontSize: '0.9rem',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
         zIndex: 30,
         WebkitAppRegion: 'no-drag',
         animation: 'fade-in 0.2s ease-out'
       } as React.CSSProperties}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px' }}>
+      <BorderGlow
+        edgeSensitivity={30}
+        glowColor="var(--theme-color)"
+        backgroundColor="rgba(15, 15, 20, 0.85)"
+        borderRadius={16}
+        glowRadius={40}
+        glowIntensity={1.0}
+        coneSpread={25}
+        animated={false}
+        className="w-full h-full"
+      >
+        <div
+          className="scrollable-menu"
+          style={{
+            padding: '16px',
+            overflowY: 'auto',
+            maxHeight: '320px',
+            color: '#fff',
+            fontSize: '0.9rem',
+          } as React.CSSProperties}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px' }}>
         <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--theme-color)' }}>Buddy Settings</h3>
         <button 
           onClick={onClose}
@@ -196,9 +209,8 @@ export function SettingsMenu({ isVisible, onClose, onTrayIconUpdate }: SettingsM
               <button
                 key={tab}
                 onClick={() => setActiveMemoryTab(activeMemoryTab === tab ? null : tab)}
+                className="glass-button"
                 style={{
-                  ...btnStyle,
-                  background: activeMemoryTab === tab ? 'rgba(180, 38, 255, 0.6)' : 'rgba(180, 38, 255, 0.25)',
                   padding: '3px 10px',
                   fontSize: '0.7rem',
                   flex: 1
@@ -256,7 +268,7 @@ export function SettingsMenu({ isVisible, onClose, onTrayIconUpdate }: SettingsM
                   style={inputStyle}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleSavePlaylist(); }}
                 />
-                <button onClick={handleSavePlaylist} style={{ ...btnStyle, width: '100%' }}>
+                <button onClick={handleSavePlaylist} className="glass-button" style={{ width: '100%', padding: '4px' }}>
                   Save Playlist
                 </button>
               </div>
@@ -288,7 +300,7 @@ export function SettingsMenu({ isVisible, onClose, onTrayIconUpdate }: SettingsM
                 if (e.key === 'Enter') handleAddMemory();
               }}
             />
-            <button onClick={handleAddMemory} style={btnStyle}>Add</button>
+            <button onClick={handleAddMemory} className="glass-button" style={{ padding: '4px 12px' }}>Add</button>
           </div>
         </div>
 
@@ -322,7 +334,8 @@ export function SettingsMenu({ isVisible, onClose, onTrayIconUpdate }: SettingsM
                   window.electronAPI.authenticateSpotify();
                 }
               }}
-              style={{ ...btnStyle, width: '100%' }}
+              className="glass-button"
+              style={{ width: '100%', padding: '8px' }}
             >
               Connect to Spotify
             </button>
@@ -339,7 +352,8 @@ export function SettingsMenu({ isVisible, onClose, onTrayIconUpdate }: SettingsM
           </p>
           <button 
             onClick={() => window.electronAPI.openCharacterEditor()}
-            style={{ ...btnStyle, width: '100%', padding: '8px' }}
+            className="glass-button"
+            style={{ width: '100%', padding: '8px' }}
           >
             Edit Character
           </button>
@@ -356,8 +370,8 @@ export function SettingsMenu({ isVisible, onClose, onTrayIconUpdate }: SettingsM
         </div>
       </div>
       )}
-
-
+        </div>
+      </BorderGlow>
     </div>
   );
 }

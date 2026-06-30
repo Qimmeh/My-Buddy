@@ -21,6 +21,7 @@ const preload = join(__dirname, 'preload.js')
 
 let win = null
 let tray = null
+let isQuitting = false
 
 // User name
 let userName = 'User'
@@ -294,8 +295,10 @@ function createWindow() {
   }
 
   win.on('close', (e) => {
-    e.preventDefault()
-    win?.hide()
+    if (!isQuitting) {
+      e.preventDefault()
+      win?.hide()
+    }
   })
 
   startRamGuard(win)
@@ -310,10 +313,8 @@ function createTray() {
     tray.setToolTip(userName + ' Buddy')
   tray.on('click', () => toggleWindow())
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Set Name...', click: () => {
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('set-user-name-prompt')
-      }
+    { label: 'Settings...', click: () => {
+      openSettingsWindow()
     }},
     { type: 'separator' },
     { label: 'Quit', click: () => { app.quit() } }
@@ -416,6 +417,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
+app.on('before-quit', () => { isQuitting = true })
 app.on('will-quit', () => { tray?.destroy(); globalShortcut.unregisterAll() })
 
 ipcMain.on('quit-app', () => { app.quit() })
@@ -426,32 +428,46 @@ ipcMain.on('authenticate-spotify', (event) => {
   if (w) authenticateSpotify(w).catch(console.error)
 })
 
-// Character Editor IPCs
-let characterEditorWin: BrowserWindow | null = null;
+// Unified Settings Window IPC
+let settingsWin: BrowserWindow | null = null;
+
 ipcMain.on('open-character-editor', () => {
-  if (characterEditorWin && !characterEditorWin.isDestroyed()) {
-    characterEditorWin.focus();
+  openSettingsWindow('character');
+});
+
+ipcMain.on('open-settings-window', () => {
+  openSettingsWindow();
+});
+
+function openSettingsWindow(tab?: string) {
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.focus();
+    if (tab) {
+      settingsWin.webContents.send('navigate-settings-tab', tab);
+    }
     return;
   }
   
-  characterEditorWin = new BrowserWindow({
-    width: 600,
-    height: 700,
+  settingsWin = new BrowserWindow({
+    width: 950,
+    height: 750,
     show: true,
-    autoHideMenuBar: true,
+    frame: false,
+    transparent: true,
     webPreferences: { preload, nodeIntegration: true, contextIsolation: true, webSecurity: false },
   });
 
+  const query = tab ? `?window=settings&tab=${tab}` : `?window=settings`;
   if (process.env.VITE_DEV_SERVER_URL) {
-    characterEditorWin.loadURL(process.env.VITE_DEV_SERVER_URL + '?window=character-editor');
+    settingsWin.loadURL(process.env.VITE_DEV_SERVER_URL + query);
   } else {
-    characterEditorWin.loadFile(join(__dirname, '../dist/index.html'), { search: 'window=character-editor' });
+    settingsWin.loadFile(join(__dirname, '../dist/index.html'), { search: query.replace('?', '') });
   }
 
-  characterEditorWin.on('closed', () => {
-    characterEditorWin = null;
+  settingsWin.on('closed', () => {
+    settingsWin = null;
   });
-});
+}
 
 ipcMain.handle('get-character-config', async () => {
   return getCharacterConfig();

@@ -3,6 +3,7 @@ import { BuddyAvatar } from './components/BuddyAvatar';
 import { ChatBubble } from './components/ChatBubble';
 import { InputTray } from './components/InputTray';
 import { SettingsMenu } from './components/SettingsMenu';
+import { SettingsWindow } from './components/SettingsWindow';
 import { CharacterEditor } from './components/CharacterEditor';
 import './index.css';
 
@@ -10,7 +11,6 @@ function App() {
   const [state, setState] = useState<'idle' | 'active' | 'ready' | 'thinking' | 'walking-left' | 'walking-right' | 'paused' | 'dizzy' | 'blink' | 'glance-left' | 'glance-right' | 'look-around'>('ready');
   const [chatVisible, setChatVisible] = useState(false);
   const [inputVisible, setInputVisible] = useState(false);
-  const [settingsVisible, setSettingsVisible] = useState(false);
   const [lastMessage, setLastMessage] = useState("Hello! I'm here.");
   const [isBouncing, setIsBouncing] = useState(false);
   const animationLock = useRef<string | null>(null);
@@ -118,8 +118,8 @@ function App() {
   useEffect(() => {
     let timeoutId: number | null = null;
     
-    // Auto-hide after 5 seconds if chat is visible, input is NOT visible, not thinking, and settings closed
-    if (chatVisible && !inputVisible && state !== 'thinking' && !settingsVisible) {
+    // Auto-hide after 5 seconds if chat is visible, input is NOT visible, and not thinking
+    if (chatVisible && !inputVisible && state !== 'thinking') {
       timeoutId = setTimeout(() => {
         setChatVisible(false);
       }, 5000);
@@ -128,22 +128,12 @@ function App() {
     return () => {
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [chatVisible, inputVisible, state, settingsVisible]);
+  }, [chatVisible, inputVisible, state]);
 
-  // Listen for "Set Name" from tray menu
-  useEffect(() => {
-    if (window.electronAPI.onSetUserNamePrompt) {
-      window.electronAPI.onSetUserNamePrompt(() => {
-        setChatVisible(false);
-        setInputVisible(false);
-        setSettingsVisible(true);
-      });
-    }
-  }, []);
+
 
   useEffect(() => {
     const handleBlur = () => {
-      setSettingsVisible(false);
       setInputVisible(false);
     };
     window.addEventListener('blur', handleBlur);
@@ -152,13 +142,13 @@ function App() {
 
   useEffect(() => {
     if (window.electronAPI.resizeWindow) {
-      if (chatVisible || settingsVisible || inputVisible) {
+      if (chatVisible || inputVisible) {
         window.electronAPI.resizeWindow('full');
       } else {
         window.electronAPI.resizeWindow('avatar');
       }
     }
-  }, [chatVisible, settingsVisible, inputVisible]);
+  }, [chatVisible, inputVisible]);
 
 
   const [isDragging, setIsDragging] = useState(false);
@@ -239,9 +229,6 @@ function App() {
 
   const handleAvatarClick = () => {
     if (dragInfo.current.isDragged) return; // Prevent click if dragged
-
-    // Hide settings if open
-    setSettingsVisible(false);
     
     // Trigger bounce
     setIsBouncing(true);
@@ -253,9 +240,7 @@ function App() {
 
   const handleAvatarContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    setChatVisible(false);
-    setInputVisible(false);
-    setSettingsVisible(true);
+    // This slot is now free for future use!
   };
 
   const handleChatBubbleClick = () => {
@@ -283,6 +268,10 @@ function App() {
     return <CharacterEditor />;
   }
 
+  if (window.location.search.includes('window=settings')) {
+    return <SettingsWindow />;
+  }
+
   return (
     <div className="app-container" style={{
       width: '100vw',
@@ -293,15 +282,6 @@ function App() {
       alignItems: 'center',
       position: 'relative'
     }}>
-      <SettingsMenu
-        isVisible={settingsVisible}
-        onClose={() => setSettingsVisible(false)}
-        onTrayIconUpdate={(path: string) => {
-          if (window.electronAPI.updateTrayIcon) {
-            window.electronAPI.updateTrayIcon(path);
-          }
-        }}
-      />
 
       <div style={{
         position: 'absolute',
@@ -323,7 +303,7 @@ function App() {
         />
         <ChatBubble 
           message={lastMessage} 
-          isVisible={chatVisible && !settingsVisible} 
+          isVisible={chatVisible} 
           onClick={handleChatBubbleClick}
           isThinking={state === 'thinking'}
         />

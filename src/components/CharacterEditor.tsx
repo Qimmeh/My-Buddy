@@ -15,6 +15,15 @@ import glanceLeftImg from '../assets/glance_left.png';
 import glanceRightImg from '../assets/glance_right.png';
 import lookAroundImg from '../assets/look_around.png';
 
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+
 export function CharacterEditor() {
   const [characterName, setCharacterName] = useState('Raiden Shogun');
   const [characterTips, setCharacterTips] = useState('from Genshin Impact');
@@ -28,7 +37,6 @@ export function CharacterEditor() {
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadBundleName, setUploadBundleName] = useState('My Custom Avatar');
-  const [uploadBundleDescription, setUploadBundleDescription] = useState('');
   const [downloadingBundles, setDownloadingBundles] = useState<Record<string, boolean>>({});
   const [selectedBundle, setSelectedBundle] = useState<any>(null);
   
@@ -43,7 +51,6 @@ export function CharacterEditor() {
   const [currentView, setCurrentView] = useState<'editor' | 'marketplace'>('editor');
 
   useEffect(() => {
-    // Load config
     if (window.electronAPI.getCharacterConfig) {
       window.electronAPI.getCharacterConfig().then((config: any) => {
         if (config) {
@@ -67,7 +74,6 @@ export function CharacterEditor() {
     }
   }, []);
 
-  // Auto-save character config
   useEffect(() => {
     const timer = setTimeout(() => {
       if (window.electronAPI.saveCharacterConfig) {
@@ -98,10 +104,6 @@ export function CharacterEditor() {
     return () => clearInterval(interval);
   }, [previewAutoPlay]);
 
-  const handleSaveConfig = () => {
-    alert('Character profiles are now auto-saved instantly!');
-  };
-
   const generateWalkingSet = (file: File, isRightFacing: boolean) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -121,7 +123,7 @@ export function CharacterEditor() {
             ctx.translate(-canvas.width, 0);
           }
           if (squish) {
-            ctx.translate(0, canvas.height * 0.05); // move down 5%
+            ctx.translate(0, canvas.height * 0.05);
             ctx.scale(1, 0.95);
           }
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -148,474 +150,370 @@ export function CharacterEditor() {
     reader.readAsDataURL(file);
   };
 
-  const btnStyle: React.CSSProperties = {
-    background: 'var(--theme-color)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '8px',
-    padding: '8px 16px',
-    cursor: 'pointer',
-    fontSize: '0.9rem',
-    fontWeight: 'bold',
-    transition: 'background 0.2s',
-  };
-
-  const inputStyle: React.CSSProperties = {
-    background: 'rgba(0,0,0,0.3)',
-    border: '1px solid var(--theme-color)',
-    borderRadius: '8px',
-    padding: '8px 12px',
-    color: '#fff',
-    fontSize: '0.9rem',
-    outline: 'none',
-    width: '100%',
-    boxSizing: 'border-box'
-  };
-
-  const sectionStyle: React.CSSProperties = {
-    background: 'rgba(255,255,255,0.05)',
-    borderRadius: '12px',
-    padding: '16px',
-    marginBottom: '16px',
-    border: '1px solid var(--glass-border)'
-  };
-
   return (
-    <div style={{
-      width: '100%',
-      minHeight: '100vh',
-      height: '100vh',
-      background: 'var(--theme-bg-gradient)',
-      color: '#fff',
-      padding: '24px',
-      overflowY: 'auto',
-      position: 'relative',
-      boxSizing: 'border-box'
-    }}>
-      <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-        <h1 style={{ color: 'var(--theme-color)', marginBottom: '24px' }}>Edit Character</h1>
+    <div className="w-full h-full flex flex-col">
+      <div className="max-w-4xl mx-auto w-full pb-10">
 
-        {currentView === 'editor' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-            {/* Left Column: Personality & Basics */}
-            <div>
-              <div style={sectionStyle}>
-                <h2 style={{ fontSize: '1.2rem', marginTop: 0, marginBottom: '16px' }}>Personality & Identity</h2>
-                
-                <div style={{ marginBottom: '12px' }}>
-                  <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '4px', color: '#ccc' }}>Character Name</label>
-                  <input 
-                    style={inputStyle} 
-                    value={characterName} 
-                    onChange={e => setCharacterName(e.target.value)} 
-                    placeholder="e.g. Raiden Shogun"
-                  />
-                </div>
+        <Tabs value={currentView} onValueChange={(v: string) => setCurrentView(v as 'editor' | 'marketplace')} className="flex flex-col h-full">
+          <TabsList className="mb-6 grid w-full grid-cols-2 bg-black/40 text-white/70">
+            <TabsTrigger value="editor" className="data-[state=active]:bg-primary/50 data-[state=active]:text-white">Profile Editor</TabsTrigger>
+            <TabsTrigger value="marketplace" className="data-[state=active]:bg-primary/50 data-[state=active]:text-white">Avatar Marketplace</TabsTrigger>
+          </TabsList>
 
-                <div style={{ marginBottom: '12px' }}>
-                  <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '4px', color: '#ccc' }}>Character Tips (Context for AI)</label>
-                  <input 
-                    style={inputStyle} 
-                    value={characterTips} 
-                    onChange={e => setCharacterTips(e.target.value)} 
-                    placeholder="e.g. from Genshin Impact"
-                  />
-                </div>
-
-                <div style={{ marginBottom: '12px' }}>
-                  <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '4px', color: '#ccc' }}>Personality Prompt</label>
-                  <textarea 
-                    style={{ ...inputStyle, minHeight: '120px', resize: 'vertical' }} 
-                    value={personalityPrompt} 
-                    onChange={e => setPersonalityPrompt(e.target.value)} 
-                    placeholder="Describe how the character acts, speaks, and their mood..."
-                  />
-                </div>
-
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '4px', color: '#ccc' }}>Theme Color</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <input 
-                      type="color" 
-                      value={themeColor} 
-                      onChange={e => {
-                        setThemeColor(e.target.value);
-                        document.documentElement.style.setProperty('--theme-color', e.target.value);
-                      }}
-                      style={{ cursor: 'pointer', width: '40px', height: '40px', padding: '0', border: 'none', borderRadius: '4px', background: 'transparent' }}
-                    />
-                    <span style={{ fontSize: '0.9rem' }}>{themeColor}</span>
-                  </div>
-                </div>
-
-              </div>
-            </div>
-
-            {/* Right Column: Avatar Settings */}
-            <div>
-              <div style={sectionStyle}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Avatar Animations</h2>
-                  <button onClick={() => setCurrentView('marketplace')} style={{ ...btnStyle, fontSize: '0.75rem', padding: '4px 10px', background: 'rgba(50, 150, 255, 0.8)' }}>Open Marketplace</button>
-                </div>
-
-                {/* Live Preview */}
-                <div style={{
-                  background: 'rgba(0,0,0,0.3)',
-                  borderRadius: '12px',
-                  padding: '12px',
-                  textAlign: 'center',
-                  border: '1px solid var(--glass-border)',
-                  marginBottom: '16px'
-                }}>
-                  <div style={{
-                    width: '100px',
-                    height: '100px',
-                    margin: '0 auto 12px auto',
-                    background: 'rgba(255,255,255,0.03)',
-                    borderRadius: '12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    border: '1px solid var(--glass-border)'
-                  }}>
-                    <img
-                      src={avatarConfig[avatarStates[previewIndex]] ? 'file://' + avatarConfig[avatarStates[previewIndex]] : (defaults[avatarStates[previewIndex]] || idleImg)}
-                      alt={avatarStates[previewIndex]}
-                      style={{ maxWidth: '80px', maxHeight: '80px', objectFit: 'contain' }}
-                    />
-                  </div>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '8px', color: 'var(--theme-color)', textTransform: 'capitalize' }}>
-                    {avatarStates[previewIndex].replace(/-/g, ' ')}
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
-                    <button onClick={() => setPreviewIndex(i => (i - 1 + avatarStates.length) % avatarStates.length)} style={{ ...btnStyle, padding: '4px 12px', background: 'rgba(255,255,255,0.1)' }}>&larr;</button>
-                    <span style={{ fontSize: '0.8rem', color: '#888', minWidth: '40px' }}>{previewIndex + 1}/{avatarStates.length}</span>
-                    <button onClick={() => setPreviewIndex(i => (i + 1) % avatarStates.length)} style={{ ...btnStyle, padding: '4px 12px', background: 'rgba(255,255,255,0.1)' }}>&rarr;</button>
-                    <button
-                      onClick={() => setPreviewAutoPlay(!previewAutoPlay)}
-                      style={{ ...btnStyle, padding: '4px 12px', background: previewAutoPlay ? 'var(--theme-color)' : 'rgba(255,255,255,0.1)' }}
-                    >
-                      {previewAutoPlay ? 'Stop' : 'Auto Play'}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Smart Walking Generator */}
-                <div style={{ marginBottom: '16px' }}>
-                  <div style={{ fontSize: '0.85rem', marginBottom: '8px', color: '#ccc' }}>Smart Walking Generator</div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <label style={{ ...btnStyle, textAlign: 'center', cursor: 'pointer', background: 'rgba(255,255,255,0.1)', flex: 1, fontSize: '0.8rem' }}>
-                      Upload LEFT-facing
-                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
-                        if (e.target.files && e.target.files[0]) generateWalkingSet(e.target.files[0], false);
-                        e.target.value = '';
-                      }} />
-                    </label>
-                    <label style={{ ...btnStyle, textAlign: 'center', cursor: 'pointer', background: 'rgba(255,255,255,0.1)', flex: 1, fontSize: '0.8rem' }}>
-                      Upload RIGHT-facing
-                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
-                        if (e.target.files && e.target.files[0]) generateWalkingSet(e.target.files[0], true);
-                        e.target.value = '';
-                      }} />
-                    </label>
-                  </div>
-                </div>
-
-                {/* State Gallery */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', maxHeight: '250px', overflowY: 'auto', paddingRight: '4px' }} className="scrollable-menu">
-                  {avatarStates.map(state => {
-                    const imgSrc = avatarConfig[state] ? 'file://' + avatarConfig[state] : defaults[state] || idleImg;
-                    return (
-                      <div key={state} style={{
-                        background: 'rgba(0,0,0,0.3)',
-                        borderRadius: '8px',
-                        padding: '8px',
-                        textAlign: 'center',
-                        border: previewIndex === avatarStates.indexOf(state) ? '1px solid var(--theme-color)' : '1px solid var(--glass-border)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}>
-                        <img
-                          src={imgSrc}
-                          alt={state}
-                          style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '4px', cursor: 'pointer', marginBottom: '4px' }}
-                          onClick={() => setPreviewIndex(avatarStates.indexOf(state))}
-                        />
-                        <div style={{ fontSize: '0.65rem', color: '#ccc', textTransform: 'capitalize', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>
-                          {state.replace(/-/g, ' ')}
-                        </div>
-                        <div style={{ display: 'flex', gap: '4px', width: '100%', marginTop: '4px' }}>
-                          <button
-                            onClick={() => window.electronAPI.selectAvatarImage(state)}
-                            style={{ ...btnStyle, fontSize: '0.6rem', padding: '2px', flex: 1 }}
-                          >Set</button>
-                          {avatarConfig[state] && (
-                            <button
-                              onClick={() => window.electronAPI.resetAvatarImage(state)}
-                              style={{ ...btnStyle, fontSize: '0.6rem', padding: '2px', background: 'rgba(255, 50, 50, 0.4)' }}
-                            >X</button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {currentView === 'marketplace' && (
-          <div style={sectionStyle}>
-            <div style={{ 
-              background: 'rgba(255,255,255,0.05)', borderRadius: '12px', padding: '12px 24px',
-              border: '1px solid var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' 
-            }}>
-              <button onClick={() => setCurrentView('editor')} style={{ ...btnStyle, background: 'rgba(255,255,255,0.1)' }}>
-                &larr; Back to Editor
-              </button>
-              <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Avatar Marketplace</h2>
-              <button
-                onClick={() => {
-                  setUploadBundleName('My Custom Avatar');
-                  setShowUploadModal(true);
-                }}
-                style={{ ...btnStyle, background: 'rgba(50, 200, 100, 0.8)' }}
-              >
-                Upload Current Avatar
-              </button>
-            </div>
-
-            {marketplaceLoading ? (
-              <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>Loading bundles...</div>
-            ) : marketplaceBundles.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>No bundles available. Upload one!</div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '16px' }}>
-                {marketplaceBundles.map(bundle => (
-                  <div key={bundle.id} onClick={() => setSelectedBundle(bundle)} style={{
-                    background: 'rgba(0,0,0,0.3)',
-                    borderRadius: '12px',
-                    padding: '16px',
-                    border: '1px solid var(--glass-border)',
-                    cursor: 'pointer',
-                    transition: 'transform 0.2s, box-shadow 0.2s',
-                  }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}>
-                    {bundle.thumbnailUrl && (
-                      <img src={bundle.thumbnailUrl} alt={bundle.name} style={{ width: '100%', height: '120px', objectFit: 'contain', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', marginBottom: '12px' }} />
-                    )}
-                    <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      {bundle.name}
-                      {bundle.isCloud ? (
-                        <span style={{ fontSize: '0.7rem', background: '#3b82f6', padding: '2px 6px', borderRadius: '4px' }}>Cloud</span>
-                      ) : (
-                        <span style={{ fontSize: '0.7rem', background: '#10b981', padding: '2px 6px', borderRadius: '4px' }}>Installed</span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: '0.85rem', color: '#aaa', marginBottom: '8px' }}>
-                      by {bundle.author} &middot; {bundle.createdAt ? new Date(bundle.createdAt).toLocaleDateString() : 'Unknown Date'}
-                    </div>
-                    {bundle.description && (
-                      <div style={{ fontSize: '0.85rem', color: '#888', marginBottom: '12px' }}>{bundle.description}</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            
-            {/* Details Modal */}
-            {selectedBundle && (
-              <div style={{
-                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
-              }} onClick={() => setSelectedBundle(null)}>
-                <div style={{
-                  background: '#1a1a24', border: '1px solid var(--glass-border)', borderRadius: '12px',
-                  padding: '24px', width: '80%', maxWidth: '800px', maxHeight: '90vh',
-                  display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto'
-                }} onClick={e => e.stopPropagation()}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <h2 style={{ margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        {selectedBundle.name}
-                        {selectedBundle.isCloud ? (
-                          <span style={{ fontSize: '0.8rem', background: '#3b82f6', padding: '4px 8px', borderRadius: '4px' }}>Cloud Bundle</span>
-                        ) : (
-                          <span style={{ fontSize: '0.8rem', background: '#10b981', padding: '4px 8px', borderRadius: '4px' }}>Installed</span>
-                        )}
-                      </h2>
-                      <div style={{ color: '#aaa', fontSize: '0.9rem' }}>by {selectedBundle.author}</div>
-                    </div>
-                    <button onClick={() => setSelectedBundle(null)} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
+          <TabsContent value="editor">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Personality & Basics */}
+              <Card className="bg-black/20 border-white/10 backdrop-blur-md text-white">
+                <CardHeader>
+                  <CardTitle>Personality & Identity</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="charName" className="text-white/70">Character Name</Label>
+                    <Input id="charName" className="bg-black/30 border-white/20 focus-visible:ring-primary text-white" value={characterName} onChange={e => setCharacterName(e.target.value)} placeholder="e.g. Raiden Shogun" />
                   </div>
                   
-                  {selectedBundle.description && (
-                    <div style={{ color: '#ddd' }}>{selectedBundle.description}</div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="charTips" className="text-white/70">Character Tips (Context)</Label>
+                    <Input id="charTips" className="bg-black/30 border-white/20 focus-visible:ring-primary text-white" value={characterTips} onChange={e => setCharacterTips(e.target.value)} placeholder="e.g. from Genshin Impact" />
+                  </div>
 
-                  <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '8px', padding: '16px' }}>
-                    <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', color: '#aaa' }}>Animations</h3>
-                    <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px' }}>
-                      {Object.keys(selectedBundle.imageUrls || {}).map(state => (
-                        <div key={state} style={{ minWidth: '100px', textAlign: 'center' }}>
-                          <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '8px', marginBottom: '8px' }}>
-                            <img src={selectedBundle.imageUrls[state]} alt={state} style={{ width: '80px', height: '80px', objectFit: 'contain' }} />
+                  <div className="space-y-2">
+                    <Label htmlFor="charPrompt" className="text-white/70">Personality Prompt</Label>
+                    <Textarea id="charPrompt" className="bg-black/30 border-white/20 focus-visible:ring-primary min-h-[120px] text-white" value={personalityPrompt} onChange={e => setPersonalityPrompt(e.target.value)} placeholder="Describe how the character acts..." />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-white/70">Theme Color</Label>
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="color" 
+                        value={themeColor} 
+                        onChange={e => {
+                          setThemeColor(e.target.value);
+                          document.documentElement.style.setProperty('--theme-color', e.target.value);
+                        }}
+                        className="w-10 h-10 p-0 border-0 rounded cursor-pointer bg-transparent"
+                      />
+                      <span className="text-sm font-medium">{themeColor}</span>
+                    </div>
+                  </div>
+
+                  <Button 
+                    className="w-full mt-4 bg-primary hover:bg-primary/90 text-white" 
+                    onClick={async () => {
+                      if (window.electronAPI.saveCharacterConfig) {
+                        try {
+                          await window.electronAPI.saveCharacterConfig({
+                            characterName,
+                            characterTips,
+                            personalityPrompt,
+                            themeColor
+                          });
+                          alert('Profile saved successfully! The character personality has been updated.');
+                        } catch (e: any) {
+                          alert('Failed to save profile: ' + e.message);
+                        }
+                      }
+                    }}
+                  >
+                    Save Profile
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Avatar Settings */}
+              <Card className="bg-black/20 border-white/10 backdrop-blur-md text-white">
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle>Avatar Animations</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Live Preview */}
+                  <div className="bg-black/30 rounded-xl p-4 text-center border border-white/10">
+                    <div className="w-24 h-24 mx-auto mb-3 bg-white/5 rounded-xl flex items-center justify-center border border-white/10">
+                      <img
+                        src={avatarConfig[avatarStates[previewIndex]] ? 'file://' + avatarConfig[avatarStates[previewIndex]] : (defaults[avatarStates[previewIndex]] || idleImg)}
+                        alt={avatarStates[previewIndex]}
+                        className="max-w-[80px] max-h-[80px] object-contain"
+                      />
+                    </div>
+                    <div className="text-sm font-bold mb-2 capitalize" style={{ color: 'var(--theme-color)' }}>
+                      {avatarStates[previewIndex].replace(/-/g, ' ')}
+                    </div>
+                    <div className="flex gap-2 justify-center items-center">
+                      <Button variant="secondary" size="sm" onClick={() => setPreviewIndex(i => (i - 1 + avatarStates.length) % avatarStates.length)}>&larr;</Button>
+                      <span className="text-xs text-white/50 min-w-[40px]">{previewIndex + 1}/{avatarStates.length}</span>
+                      <Button variant="secondary" size="sm" onClick={() => setPreviewIndex(i => (i + 1) % avatarStates.length)}>&rarr;</Button>
+                      <Button variant={previewAutoPlay ? "default" : "secondary"} size="sm" onClick={() => setPreviewAutoPlay(!previewAutoPlay)}>
+                        {previewAutoPlay ? 'Stop' : 'Auto Play'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Smart Walking Generator */}
+                  <div className="space-y-2">
+                    <Label className="text-white/70">Smart Walking Generator</Label>
+                    <div className="flex gap-2">
+                      <Button variant="secondary" className="flex-1 text-xs relative overflow-hidden" asChild>
+                        <label className="cursor-pointer">
+                          Upload LEFT
+                          <input type="file" accept="image/*" className="hidden" onChange={e => {
+                            if (e.target.files && e.target.files[0]) generateWalkingSet(e.target.files[0], false);
+                            e.target.value = '';
+                          }} />
+                        </label>
+                      </Button>
+                      <Button variant="secondary" className="flex-1 text-xs relative overflow-hidden" asChild>
+                        <label className="cursor-pointer">
+                          Upload RIGHT
+                          <input type="file" accept="image/*" className="hidden" onChange={e => {
+                            if (e.target.files && e.target.files[0]) generateWalkingSet(e.target.files[0], true);
+                            e.target.value = '';
+                          }} />
+                        </label>
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* State Gallery */}
+                  <ScrollArea className="h-64 pr-4 border border-white/10 rounded-md bg-black/20 p-2">
+                    <div className="grid grid-cols-3 gap-2">
+                      {avatarStates.map(state => {
+                        const imgSrc = avatarConfig[state] ? 'file://' + avatarConfig[state] : defaults[state] || idleImg;
+                        return (
+                          <div key={state} className={`bg-black/30 rounded-lg p-2 text-center flex flex-col items-center justify-between border ${previewIndex === avatarStates.indexOf(state) ? 'border-primary' : 'border-white/5'}`}>
+                            <img
+                              src={imgSrc}
+                              alt={state}
+                              className="w-10 h-10 object-contain rounded cursor-pointer mb-1"
+                              onClick={() => setPreviewIndex(avatarStates.indexOf(state))}
+                            />
+                            <div className="text-[0.6rem] text-white/70 capitalize whitespace-nowrap overflow-hidden text-ellipsis w-full">
+                              {state.replace(/-/g, ' ')}
+                            </div>
+                            <div className="flex gap-1 w-full mt-1">
+                              <Button size="sm" variant="default" className="h-6 text-[0.55rem] px-1 flex-1" onClick={() => window.electronAPI.selectAvatarImage(state)}>Set</Button>
+                              {avatarConfig[state] && (
+                                <Button size="sm" variant="destructive" className="h-6 text-[0.55rem] px-1" onClick={() => window.electronAPI.resetAvatarImage(state)}>X</Button>
+                              )}
+                            </div>
                           </div>
-                          <div style={{ fontSize: '0.8rem', color: '#888' }}>{state}</div>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="marketplace">
+            <Card className="bg-black/20 border-white/10 backdrop-blur-md text-white min-h-[500px]">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Marketplace</CardTitle>
+                  <CardDescription className="text-white/60">Discover and install community avatars</CardDescription>
+                </div>
+                <Button variant="default" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => {
+                  setUploadBundleName('My Custom Avatar');
+                  setShowUploadModal(true);
+                }}>
+                  Upload Current Avatar
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {marketplaceLoading ? (
+                  <div className="text-center p-10 text-white/50">Loading bundles...</div>
+                ) : marketplaceBundles.length === 0 ? (
+                  <div className="text-center p-10 text-white/50">No bundles available. Upload one!</div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                    {marketplaceBundles.map(bundle => (
+                      <Card key={bundle.id} className="bg-black/30 border-white/10 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:shadow-black/50 transition-all text-white" onClick={() => setSelectedBundle(bundle)}>
+                        <CardContent className="p-4">
+                          {bundle.thumbnailUrl && (
+                            <img src={bundle.thumbnailUrl} alt={bundle.name} className="w-full h-24 object-contain bg-white/5 rounded-md mb-3" />
+                          )}
+                          <div className="font-bold text-lg mb-1 flex justify-between items-center">
+                            <span className="truncate">{bundle.name}</span>
+                            {bundle.isCloud ? (
+                              <span className="text-[0.65rem] bg-blue-500 px-2 py-0.5 rounded text-white">Cloud</span>
+                            ) : (
+                              <span className="text-[0.65rem] bg-emerald-500 px-2 py-0.5 rounded text-white">Installed</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-white/50 mb-2">by {bundle.author} &middot; {bundle.createdAt ? new Date(bundle.createdAt).toLocaleDateString() : 'Unknown'}</div>
+                          {bundle.description && <div className="text-xs text-white/70 line-clamp-2">{bundle.description}</div>}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      {/* Details Dialog */}
+      <Dialog open={!!selectedBundle} onOpenChange={(open) => !open && setSelectedBundle(null)}>
+        <DialogContent className="bg-black/90 text-white border-white/20 sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+          {selectedBundle && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-3 text-xl">
+                  {selectedBundle.name}
+                  {selectedBundle.isCloud ? (
+                    <span className="text-xs bg-blue-500 px-2 py-1 rounded">Cloud</span>
+                  ) : (
+                    <span className="text-xs bg-emerald-500 px-2 py-1 rounded">Installed</span>
+                  )}
+                </DialogTitle>
+                <DialogDescription className="text-white/60">by {selectedBundle.author}</DialogDescription>
+              </DialogHeader>
+              
+              <ScrollArea className="max-h-[50vh] pr-4">
+                {selectedBundle.description && <div className="text-white/80 my-2">{selectedBundle.description}</div>}
+                
+                <div className="bg-white/5 rounded-lg p-4 mb-4 border border-white/10 mt-2">
+                  <h3 className="text-sm text-white/50 mb-3 font-medium">Animations</h3>
+                  <ScrollArea className="w-full whitespace-nowrap pb-4" orientation="horizontal">
+                    <div className="flex w-max space-x-4">
+                      {Object.keys(selectedBundle.imageUrls || {}).map(state => (
+                        <div key={state} className="text-center w-20">
+                          <div className="bg-black/40 rounded-lg p-2 mb-2 border border-white/5">
+                            <img src={selectedBundle.imageUrls[state]} alt={state} className="w-16 h-16 object-contain" />
+                          </div>
+                          <div className="text-[0.65rem] text-white/50 capitalize truncate">{state.replace(/-/g, ' ')}</div>
                         </div>
                       ))}
                       {(!selectedBundle.imageUrls || Object.keys(selectedBundle.imageUrls).length === 0) && (
-                        <div style={{ color: '#888', fontStyle: 'italic' }}>No animations included.</div>
+                        <div className="text-white/40 italic text-sm">No animations included.</div>
                       )}
                     </div>
-                  </div>
+                  </ScrollArea>
+                </div>
 
-                  <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: '8px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <h3 style={{ margin: '0 0 4px 0', fontSize: '1rem', color: '#aaa' }}>Configuration Setup</h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                      <div>
-                        <div style={{ fontSize: '0.8rem', color: '#888', marginBottom: '4px' }}>Character Name</div>
-                        <div style={{ background: 'rgba(0,0,0,0.2)', padding: '8px', borderRadius: '4px' }}>{selectedBundle.characterName || 'N/A'}</div>
+                <div className="bg-white/5 rounded-lg p-4 mb-4 border border-white/10">
+                  <h3 className="text-sm text-white/50 mb-3 font-medium">Configuration Profile</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-xs text-white/50 mb-1">Character Name</div>
+                      <div className="bg-black/40 p-2 rounded text-sm truncate">{selectedBundle.characterName || 'N/A'}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-white/50 mb-1">Theme Color</div>
+                      <div className="flex items-center gap-2 bg-black/40 p-2 rounded text-sm truncate">
+                        <div className="w-4 h-4 rounded-full" style={{ background: selectedBundle.themeColor || '#b026ff' }} />
+                        {selectedBundle.themeColor || 'N/A'}
                       </div>
-                      <div>
-                        <div style={{ fontSize: '0.8rem', color: '#888', marginBottom: '4px' }}>Theme Color</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '8px', borderRadius: '4px' }}>
-                          <div style={{ width: '16px', height: '16px', borderRadius: '50%', background: selectedBundle.themeColor || '#b026ff' }} />
-                          {selectedBundle.themeColor || 'N/A'}
-                        </div>
-                      </div>
-                      <div style={{ gridColumn: '1 / -1' }}>
-                        <div style={{ fontSize: '0.8rem', color: '#888', marginBottom: '4px' }}>Tooltips</div>
-                        <div style={{ background: 'rgba(0,0,0,0.2)', padding: '8px', borderRadius: '4px' }}>{selectedBundle.characterTips || 'N/A'}</div>
-                      </div>
-                      <div style={{ gridColumn: '1 / -1' }}>
-                        <div style={{ fontSize: '0.8rem', color: '#888', marginBottom: '4px' }}>Personality Prompt</div>
-                        <div style={{ background: 'rgba(0,0,0,0.2)', padding: '8px', borderRadius: '4px', whiteSpace: 'pre-wrap', maxHeight: '100px', overflowY: 'auto' }}>
-                          {selectedBundle.personalityPrompt || 'N/A'}
-                        </div>
+                    </div>
+                    <div className="col-span-2">
+                      <div className="text-xs text-white/50 mb-1">Tooltips</div>
+                      <div className="bg-black/40 p-2 rounded text-sm">{selectedBundle.characterTips || 'N/A'}</div>
+                    </div>
+                    <div className="col-span-2">
+                      <div className="text-xs text-white/50 mb-1">Personality Prompt</div>
+                      <div className="h-24 bg-black/40 p-2 rounded text-sm whitespace-pre-wrap overflow-y-auto">
+                        {selectedBundle.personalityPrompt || 'N/A'}
                       </div>
                     </div>
                   </div>
+                </div>
+              </ScrollArea>
 
-                  <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
-                    <button
-                      disabled={downloadingBundles[selectedBundle.id]}
-                      onClick={async () => {
-                        setDownloadingBundles(prev => ({ ...prev, [selectedBundle.id]: true }));
+              <DialogFooter className="flex-col sm:flex-row gap-2 mt-4">
+                {!selectedBundle.isCloud && window.electronAPI.deleteBundle && (
+                  <Button
+                    variant="destructive"
+                    onClick={async () => {
+                      if (confirm('Delete this bundle from your local PC?')) {
                         try {
-                          const config = await window.electronAPI.installBundle(selectedBundle.id);
-                          if (config) {
-                            alert('Bundle "' + selectedBundle.name + '" installed! Please check the avatar settings.');
-                            if (window.electronAPI.getCharacterConfig) {
-                              const charConfig = await window.electronAPI.getCharacterConfig();
-                              if (charConfig) {
-                                setCharacterName(charConfig.characterName || 'Raiden Shogun');
-                                setCharacterTips(charConfig.characterTips || 'from Genshin Impact');
-                                setPersonalityPrompt(charConfig.personalityPrompt || 'You are a specialized, evolving system AI. Your personality is sleek, helpful, and tech-savvy.');
-                                setThemeColor(charConfig.themeColor || '#b026ff');
-                                document.documentElement.style.setProperty('--theme-color', charConfig.themeColor || '#b026ff');
-                              }
-                            }
+                          const success = await window.electronAPI.deleteBundle(selectedBundle.id);
+                          if (success) {
+                            setSelectedBundle(null);
+                            setMarketplaceBundles(prev => prev.filter(b => b.id !== selectedBundle.id));
                           }
                         } catch (e: any) {
-                          alert('Install failed: ' + (e.message || 'unknown error'));
-                        } finally {
-                          setDownloadingBundles(prev => ({ ...prev, [selectedBundle.id]: false }));
-                          setSelectedBundle(null);
+                          alert('Delete failed: ' + e.message);
                         }
-                      }}
-                      style={{ ...btnStyle, flex: 1, background: 'var(--theme-color)', opacity: downloadingBundles[selectedBundle.id] ? 0.7 : 1, fontSize: '1.1rem', padding: '12px' }}
-                    >
-                      {downloadingBundles[selectedBundle.id] ? 'Downloading...' : 'Install Bundle'}
-                    </button>
-                    
-                    {!selectedBundle.isCloud && window.electronAPI.deleteBundle && (
-                      <button
-                        onClick={async () => {
-                          if (confirm('Delete this bundle from your local PC?')) {
-                            try {
-                              const success = await window.electronAPI.deleteBundle(selectedBundle.id);
-                              if (success) {
-                                setSelectedBundle(null);
-                                setMarketplaceBundles(prev => prev.filter(b => b.id !== selectedBundle.id));
-                              }
-                            } catch (e: any) {
-                              alert('Delete failed: ' + e.message);
-                            }
+                      }
+                    }}
+                  >
+                    Delete Bundle
+                  </Button>
+                )}
+                <Button
+                  className="flex-1"
+                  disabled={downloadingBundles[selectedBundle.id]}
+                  onClick={async () => {
+                    setDownloadingBundles(prev => ({ ...prev, [selectedBundle.id]: true }));
+                    try {
+                      const config = await window.electronAPI.installBundle(selectedBundle.id);
+                      if (config) {
+                        alert('Bundle "' + selectedBundle.name + '" installed!');
+                        if (window.electronAPI.getCharacterConfig) {
+                          const charConfig = await window.electronAPI.getCharacterConfig();
+                          if (charConfig) {
+                            setCharacterName(charConfig.characterName || 'Raiden Shogun');
+                            setCharacterTips(charConfig.characterTips || 'from Genshin Impact');
+                            setPersonalityPrompt(charConfig.personalityPrompt || 'You are a specialized, evolving system AI. Your personality is sleek, helpful, and tech-savvy.');
+                            setThemeColor(charConfig.themeColor || '#b026ff');
+                            document.documentElement.style.setProperty('--theme-color', charConfig.themeColor || '#b026ff');
                           }
-                        }}
-                        style={{ ...btnStyle, background: 'rgba(255, 50, 50, 0.8)', padding: '12px' }}
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+                        }
+                      }
+                    } catch (e: any) {
+                      alert('Install failed: ' + (e.message || 'unknown error'));
+                    } finally {
+                      setDownloadingBundles(prev => ({ ...prev, [selectedBundle.id]: false }));
+                      setSelectedBundle(null);
+                    }
+                  }}
+                >
+                  {downloadingBundles[selectedBundle.id] ? 'Downloading...' : 'Install Bundle'}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
-      {/* ===== Upload Modal ===== */}
-      {showUploadModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.8)', zIndex: 1000,
-          display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }}>
-          <div style={{
-            background: 'var(--theme-color, #b026ff)',
-            padding: '24px', borderRadius: '16px', width: '300px',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.5)', border: '1px solid var(--glass-border)'
-          }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>Upload Bundle</h3>
-            <input
-              type="text"
-              value={uploadBundleName}
-              onChange={e => setUploadBundleName(e.target.value)}
-              style={inputStyle}
-              placeholder="Bundle Name"
-            />
-            <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
-              <button
-                style={{ ...btnStyle, flex: 1, background: 'rgba(255,255,255,0.1)' }}
-                onClick={() => setShowUploadModal(false)}
-              >
-                Cancel
-              </button>
-              <button
-                style={{ ...btnStyle, flex: 1, background: 'rgba(50, 200, 100, 0.8)' }}
-                onClick={async () => {
-                  setShowUploadModal(false);
-                  const result = await window.electronAPI.createBundle(uploadBundleName, 'User', '');
-                  if (result.success) {
-                    alert('Bundle "' + uploadBundleName + '" uploaded to marketplace!');
-                    window.electronAPI.listBundles().then(setMarketplaceBundles);
-                  } else {
-                    alert(result.error === 'DUPLICATE_BUNDLE' ? 'This exact avatar set is already bundled. Modify some images first!' : 'Error: ' + result.error);
-                  }
-                }}
-              >
-                Upload
-              </button>
+      {/* Upload Modal */}
+      <Dialog open={showUploadModal} onOpenChange={setShowUploadModal}>
+        <DialogContent className="bg-black/90 text-white border-white/20 sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Upload Bundle</DialogTitle>
+            <DialogDescription className="text-white/60">Publish your custom avatar set to the community marketplace.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="space-y-2">
+              <Label>Bundle Name</Label>
+              <Input
+                value={uploadBundleName}
+                onChange={e => setUploadBundleName(e.target.value)}
+                className="bg-black/40 border-white/20 text-white"
+                placeholder="e.g. Chill Lo-Fi Avatar"
+              />
             </div>
           </div>
-        </div>
-      )}
-
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowUploadModal(false)}>Cancel</Button>
+            <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={async () => {
+              setShowUploadModal(false);
+              const result = await window.electronAPI.createBundle(uploadBundleName, 'User', '');
+              if (result.success) {
+                alert('Bundle "' + uploadBundleName + '" uploaded to marketplace!');
+                window.electronAPI.listBundles().then(setMarketplaceBundles);
+              } else {
+                alert(result.error === 'DUPLICATE_BUNDLE' ? 'This exact avatar set is already bundled. Modify some images first!' : 'Error: ' + result.error);
+              }
+            }}>
+              Upload to Marketplace
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

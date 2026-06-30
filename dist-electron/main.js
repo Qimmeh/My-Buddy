@@ -1,216 +1,275 @@
-import { BrowserWindow as e, Menu as t, Tray as n, app as r, dialog as i, globalShortcut as a, ipcMain as o, nativeImage as s, screen as c } from "electron";
-import { dirname as l, extname as ee, join as u } from "node:path";
-import { fileURLToPath as te } from "node:url";
-import * as d from "node:fs";
-import { promises as f } from "node:fs";
-import { exec as p } from "node:child_process";
-import { promisify as ne } from "node:util";
-import * as re from "node:http";
-import { createHash as ie } from "node:crypto";
+import { BrowserWindow, Menu, Tray, app, dialog, globalShortcut, ipcMain, nativeImage, screen } from "electron";
+import { dirname, extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import * as fs from "node:fs";
+import { promises } from "node:fs";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+import * as http from "node:http";
+import { createHash } from "node:crypto";
 //#region electron/ramGuard.ts
-var ae = ne(p), oe = [
+var execAsync$1 = promisify(exec);
+var TARGET_GAMES = [
 	"VALORANT.exe",
 	"Minecraft.exe",
 	"javaw.exe"
-], se = "http://localhost:11434/api/generate", ce = "llama3", m = !1;
-function le(e) {
+];
+var OLLAMA_API$1 = "http://localhost:11434/api/generate";
+var MODEL_NAME$1 = "llama3";
+var isSleeping = false;
+function startRamGuard(win) {
 	setInterval(async () => {
 		try {
-			let { stdout: t } = await ae("tasklist"), n = oe.some((e) => t.toLowerCase().includes(e.toLowerCase()));
-			n && !m ? (console.log("[RAM Guard] Game detected. Unloading Ollama model..."), await fetch(se, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					model: ce,
-					keep_alive: 0
-				})
-			}).catch((e) => console.error("[RAM Guard] Failed to unload Ollama:", e)), m = !0, e.webContents.send("ram-guard-status", "sleeping")) : !n && m && (console.log("[RAM Guard] Game closed. AI is active."), m = !1, e.webContents.send("ram-guard-status", "active"));
-		} catch (e) {
-			console.error("[RAM Guard] Error checking processes:", e);
+			const { stdout } = await execAsync$1("tasklist");
+			const gameDetected = TARGET_GAMES.some((game) => stdout.toLowerCase().includes(game.toLowerCase()));
+			if (gameDetected && !isSleeping) {
+				console.log("[RAM Guard] Game detected. Unloading Ollama model...");
+				await fetch(OLLAMA_API$1, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						model: MODEL_NAME$1,
+						keep_alive: 0
+					})
+				}).catch((err) => console.error("[RAM Guard] Failed to unload Ollama:", err));
+				isSleeping = true;
+				win.webContents.send("ram-guard-status", "sleeping");
+			} else if (!gameDetected && isSleeping) {
+				console.log("[RAM Guard] Game closed. AI is active.");
+				isSleeping = false;
+				win.webContents.send("ram-guard-status", "active");
+			}
+		} catch (error) {
+			console.error("[RAM Guard] Error checking processes:", error);
 		}
 	}, 1e4);
 }
 //#endregion
 //#region electron/characterConfig.ts
-var ue = {
+var DEFAULT_CONFIG = {
 	characterName: "Raiden Shogun",
 	characterTips: "from Genshin Impact",
 	personalityPrompt: "You are a specialized, evolving system AI. Your personality is sleek, helpful, and tech-savvy.",
 	themeColor: "#b026ff"
 };
-function de() {
-	return u(r.getPath("userData"), "character_config.json");
+function getConfigPath() {
+	return join(app.getPath("userData"), "character_config.json");
 }
-function h() {
-	let e = de();
+function getCharacterConfig() {
+	const configPath = getConfigPath();
 	try {
-		if (d.existsSync(e)) {
-			let t = d.readFileSync(e, "utf-8"), n = JSON.parse(t);
+		if (fs.existsSync(configPath)) {
+			const data = fs.readFileSync(configPath, "utf-8");
+			const parsed = JSON.parse(data);
 			return {
-				...ue,
-				...n
+				...DEFAULT_CONFIG,
+				...parsed
 			};
 		}
-	} catch (e) {
-		console.error("Failed to read character config", e);
+	} catch (err) {
+		console.error("Failed to read character config", err);
 	}
-	return { ...ue };
+	return { ...DEFAULT_CONFIG };
 }
-function fe(e) {
-	let t = de();
+function saveCharacterConfig(config) {
+	const configPath = getConfigPath();
 	try {
-		d.writeFileSync(t, JSON.stringify(e, null, 2));
-	} catch (e) {
-		console.error("Failed to save character config", e);
+		fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+	} catch (err) {
+		console.error("Failed to save character config", err);
 	}
 }
 //#endregion
 //#region electron/spotifyService.ts
-var pe = "http://127.0.0.1:8888/callback", me = u(r.getPath("userData"), "spotify_tokens.json"), he = u(r.getPath("userData"), "spotify_config.json"), g = "", _ = "", v = "", y = "", b = 0;
-function ge() {
-	if (d.existsSync(he)) try {
-		let e = JSON.parse(d.readFileSync(he, "utf-8"));
-		g = e.clientId || "", _ = e.clientSecret || "";
+var REDIRECT_URI = "http://127.0.0.1:8888/callback";
+var TOKEN_FILE = join(app.getPath("userData"), "spotify_tokens.json");
+var CONFIG_FILE = join(app.getPath("userData"), "spotify_config.json");
+var clientId = "";
+var clientSecret = "";
+var accessToken = "";
+var refreshToken = "";
+var tokenExpirationTime = 0;
+function loadSpotifyConfig() {
+	if (fs.existsSync(CONFIG_FILE)) try {
+		const data = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
+		clientId = data.clientId || "";
+		clientSecret = data.clientSecret || "";
 	} catch (e) {
 		console.error("Failed to load Spotify config", e);
 	}
 	return {
-		clientId: g,
-		clientSecret: _
+		clientId,
+		clientSecret
 	};
 }
-function _e(e, t) {
-	g = e, _ = t, d.writeFileSync(he, JSON.stringify({
-		clientId: g,
-		clientSecret: _
+function saveSpotifyConfig(id, secret) {
+	clientId = id;
+	clientSecret = secret;
+	fs.writeFileSync(CONFIG_FILE, JSON.stringify({
+		clientId,
+		clientSecret
 	}));
 }
-function ve() {
-	if (d.existsSync(me)) try {
-		let e = JSON.parse(d.readFileSync(me, "utf-8"));
-		v = e.access_token, y = e.refresh_token, b = e.expiration_time;
+function loadTokens() {
+	if (fs.existsSync(TOKEN_FILE)) try {
+		const data = JSON.parse(fs.readFileSync(TOKEN_FILE, "utf-8"));
+		accessToken = data.access_token;
+		refreshToken = data.refresh_token;
+		tokenExpirationTime = data.expiration_time;
 	} catch (e) {
 		console.error("Failed to load Spotify tokens", e);
 	}
 }
-function ye(e) {
-	v = e.access_token, e.refresh_token && (y = e.refresh_token), b = Date.now() + (e.expires_in - 60) * 1e3, d.writeFileSync(me, JSON.stringify({
-		access_token: v,
-		refresh_token: y,
-		expiration_time: b
+function saveTokens(data) {
+	accessToken = data.access_token;
+	if (data.refresh_token) refreshToken = data.refresh_token;
+	tokenExpirationTime = Date.now() + (data.expires_in - 60) * 1e3;
+	fs.writeFileSync(TOKEN_FILE, JSON.stringify({
+		access_token: accessToken,
+		refresh_token: refreshToken,
+		expiration_time: tokenExpirationTime
 	}));
 }
-async function x() {
-	if (!g || !_ || !v || !y) return null;
-	if (Date.now() > b) {
-		let e = Buffer.from(`${g}:${_}`).toString("base64");
+async function getValidToken() {
+	if (!clientId || !clientSecret) return null;
+	if (!accessToken || !refreshToken) return null;
+	if (Date.now() > tokenExpirationTime) {
+		const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 		try {
-			let t = await fetch("https://accounts.spotify.com/api/token", {
+			const res = await fetch("https://accounts.spotify.com/api/token", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/x-www-form-urlencoded",
-					Authorization: `Basic ${e}`
+					"Authorization": `Basic ${authHeader}`
 				},
 				body: new URLSearchParams({
 					grant_type: "refresh_token",
-					refresh_token: y
+					refresh_token: refreshToken
 				})
 			});
-			if (t.ok) ye(await t.json());
+			if (res.ok) saveTokens(await res.json());
 			else return null;
 		} catch (e) {
-			return console.error("Token refresh failed", e), null;
+			console.error("Token refresh failed", e);
+			return null;
 		}
 	}
-	return v;
+	return accessToken;
 }
-function be(e) {
-	return new Promise((e, t) => {
-		if (!g || !_) {
-			t("No Spotify credentials configured");
+function authenticateSpotify(_win) {
+	return new Promise((resolve, reject) => {
+		if (!clientId || !clientSecret) {
+			reject("No Spotify credentials configured");
 			return;
 		}
-		let n = `https://accounts.spotify.com/authorize?client_id=${g}&response_type=code&redirect_uri=${encodeURIComponent(pe)}&scope=user-read-playback-state%20user-modify-playback-state`, r = re.createServer(async (n, i) => {
-			let a = new URL(n.url || "", `http://${n.headers.host}`);
-			if (a.pathname === "/callback") {
-				let n = a.searchParams.get("code");
-				if (n) {
-					i.writeHead(200, { "Content-Type": "text/html" }), i.end("<h1>Spotify authenticated successfully!</h1><p>You can close this window now.</p><script>window.close()<\/script>"), r.close();
-					let a = Buffer.from(`${g}:${_}`).toString("base64");
+		const authUrl = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent("user-read-playback-state user-modify-playback-state")}`;
+		const server = http.createServer(async (req, res) => {
+			const url = new URL(req.url || "", `http://${req.headers.host}`);
+			if (url.pathname === "/callback") {
+				const code = url.searchParams.get("code");
+				if (code) {
+					res.writeHead(200, { "Content-Type": "text/html" });
+					res.end("<h1>Spotify authenticated successfully!</h1><p>You can close this window now.</p><script>window.close()<\/script>");
+					server.close();
+					const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 					try {
-						let r = await fetch("https://accounts.spotify.com/api/token", {
+						const tokenRes = await fetch("https://accounts.spotify.com/api/token", {
 							method: "POST",
 							headers: {
 								"Content-Type": "application/x-www-form-urlencoded",
-								Authorization: `Basic ${a}`
+								"Authorization": `Basic ${authHeader}`
 							},
 							body: new URLSearchParams({
 								grant_type: "authorization_code",
-								code: n,
-								redirect_uri: pe
+								code,
+								redirect_uri: REDIRECT_URI
 							})
 						});
-						r.ok ? (ye(await r.json()), e()) : t("Failed to exchange code");
+						if (tokenRes.ok) {
+							saveTokens(await tokenRes.json());
+							resolve();
+						} else reject("Failed to exchange code");
 					} catch (e) {
-						t(e);
+						reject(e);
 					}
-				} else i.writeHead(400, { "Content-Type": "text/plain" }), i.end("Failed to authenticate"), r.close(), t("No code in callback");
+				} else {
+					res.writeHead(400, { "Content-Type": "text/plain" });
+					res.end("Failed to authenticate");
+					server.close();
+					reject("No code in callback");
+				}
 			}
 		});
-		r.listen(8888, () => {
-			console.log("Listening for Spotify callback on port 8888"), p(`start "" "${n}"`);
+		server.listen(8888, () => {
+			console.log("Listening for Spotify callback on port 8888");
+			exec(`start "" "${authUrl}"`);
 		});
 	});
 }
-async function xe(e, t) {
-	let n = await x();
-	if (!n) try {
-		await be(t), n = await x();
+async function playSpotifyQuery(query, win) {
+	let token = await getValidToken();
+	if (!token) try {
+		await authenticateSpotify(win);
+		token = await getValidToken();
 	} catch (e) {
-		return console.error("Failed to auth Spotify during play", e), null;
+		console.error("Failed to auth Spotify during play", e);
+		return null;
 	}
-	if (!n) return null;
+	if (!token) return null;
 	try {
-		let t = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(e)}&type=track,playlist&limit=1`, { headers: { Authorization: `Bearer ${n}` } });
-		if (t.ok) {
-			let r = await t.json(), i = null, a = "", o = "";
-			if (r.playlists && r.playlists.items.length > 0 && e.toLowerCase().includes("playlist") ? (i = r.playlists.items[0].uri, a = r.playlists.items[0].name, o = r.playlists.items[0].owner.display_name) : r.tracks && r.tracks.items.length > 0 && (i = r.tracks.items[0].uri, a = r.tracks.items[0].name, o = r.tracks.items[0].artists[0].name), i) {
-				let e = await fetch("https://api.spotify.com/v1/me/player/play", {
+		const searchRes = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track,playlist&limit=1`, { headers: { "Authorization": `Bearer ${token}` } });
+		if (searchRes.ok) {
+			const data = await searchRes.json();
+			let uriToPlay = null;
+			let name = "";
+			let artist = "";
+			if (data.playlists && data.playlists.items.length > 0 && query.toLowerCase().includes("playlist")) {
+				uriToPlay = data.playlists.items[0].uri;
+				name = data.playlists.items[0].name;
+				artist = data.playlists.items[0].owner.display_name;
+			} else if (data.tracks && data.tracks.items.length > 0) {
+				uriToPlay = data.tracks.items[0].uri;
+				name = data.tracks.items[0].name;
+				artist = data.tracks.items[0].artists[0].name;
+			}
+			if (uriToPlay) {
+				let playRes = await fetch("https://api.spotify.com/v1/me/player/play", {
 					method: "PUT",
 					headers: {
-						Authorization: `Bearer ${n}`,
+						"Authorization": `Bearer ${token}`,
 						"Content-Type": "application/json"
 					},
 					body: JSON.stringify({
-						context_uri: i.includes("playlist") ? i : void 0,
-						uris: i.includes("track") ? [i] : void 0
+						context_uri: uriToPlay.includes("playlist") ? uriToPlay : void 0,
+						uris: uriToPlay.includes("track") ? [uriToPlay] : void 0
 					})
 				});
-				if (e.status === 404) {
-					let t = await fetch("https://api.spotify.com/v1/me/player/devices", { headers: { Authorization: `Bearer ${n}` } });
-					if (t.ok) {
-						let r = await t.json();
-						if (r.devices && r.devices.length > 0) {
-							let t = r.devices[0].id;
-							e = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${t}`, {
+				if (playRes.status === 404) {
+					const devicesRes = await fetch("https://api.spotify.com/v1/me/player/devices", { headers: { "Authorization": `Bearer ${token}` } });
+					if (devicesRes.ok) {
+						const devicesData = await devicesRes.json();
+						if (devicesData.devices && devicesData.devices.length > 0) {
+							const targetDevice = devicesData.devices[0].id;
+							playRes = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${targetDevice}`, {
 								method: "PUT",
 								headers: {
-									Authorization: `Bearer ${n}`,
+									"Authorization": `Bearer ${token}`,
 									"Content-Type": "application/json"
 								},
 								body: JSON.stringify({
-									context_uri: i.includes("playlist") ? i : void 0,
-									uris: i.includes("track") ? [i] : void 0
+									context_uri: uriToPlay.includes("playlist") ? uriToPlay : void 0,
+									uris: uriToPlay.includes("track") ? [uriToPlay] : void 0
 								})
 							});
 						}
 					}
 				}
-				if (!e.ok) {
-					let t = await e.text();
-					console.error(`Spotify Play failed: ${e.status} ${t}`), p(`powershell -Command "${`
+				if (!playRes.ok) {
+					const errText = await playRes.text();
+					console.error(`Spotify Play failed: ${playRes.status} ${errText}`);
+					exec(`powershell -Command "${`
             $wshell = New-Object -ComObject wscript.shell
-            Start-Process "${i}"
+            Start-Process "${uriToPlay}"
             Start-Sleep -Seconds 2
             $wshell.AppActivate("Spotify")
             Start-Sleep -Milliseconds 500
@@ -218,108 +277,128 @@ async function xe(e, t) {
           `.replace(/\n/g, ";")}"`);
 				}
 				return {
-					name: a,
-					artist: o,
-					uri: i
+					name,
+					artist,
+					uri: uriToPlay
 				};
-			} else p(`start "" "spotify:search:${encodeURIComponent(e)}"`);
+			} else exec(`start "" "spotify:search:${encodeURIComponent(query)}"`);
 		}
 	} catch (e) {
 		console.error("Spotify search/play error", e);
 	}
 	return null;
 }
-async function Se(e, t) {
-	let n = await x();
-	if (!n) try {
-		await be(t), n = await x();
+async function playSpotifyUri(uri, win) {
+	let token = await getValidToken();
+	if (!token) try {
+		await authenticateSpotify(win);
+		token = await getValidToken();
 	} catch (e) {
-		return console.error("Failed to auth Spotify for URI play", e), null;
+		console.error("Failed to auth Spotify for URI play", e);
+		return null;
 	}
-	if (!n) return null;
-	let r = e.includes(":track:"), i = e.includes(":playlist:");
+	if (!token) return null;
+	const isTrack = uri.includes(":track:");
+	const isPlaylist = uri.includes(":playlist:");
 	try {
-		let a = {};
-		if (i) a.context_uri = e;
-		else if (r) a.uris = [e];
-		else return xe(e, t);
-		let o = await fetch("https://api.spotify.com/v1/me/player/play", {
+		const body = {};
+		if (isPlaylist) body.context_uri = uri;
+		else if (isTrack) body.uris = [uri];
+		else return playSpotifyQuery(uri, win);
+		let playRes = await fetch("https://api.spotify.com/v1/me/player/play", {
 			method: "PUT",
 			headers: {
-				Authorization: "Bearer " + n,
+				"Authorization": "Bearer " + token,
 				"Content-Type": "application/json"
 			},
-			body: JSON.stringify(a)
+			body: JSON.stringify(body)
 		});
-		if (o.status === 404) {
-			let e = await fetch("https://api.spotify.com/v1/me/player/devices", { headers: { Authorization: "Bearer " + n } });
-			if (e.ok) {
-				let t = await e.json();
-				if (t.devices?.length > 0) {
-					let e = t.devices[0].id;
-					o = await fetch("https://api.spotify.com/v1/me/player/play?device_id=" + e, {
+		if (playRes.status === 404) {
+			const devicesRes = await fetch("https://api.spotify.com/v1/me/player/devices", { headers: { "Authorization": "Bearer " + token } });
+			if (devicesRes.ok) {
+				const devicesData = await devicesRes.json();
+				if (devicesData.devices?.length > 0) {
+					const deviceId = devicesData.devices[0].id;
+					playRes = await fetch("https://api.spotify.com/v1/me/player/play?device_id=" + deviceId, {
 						method: "PUT",
 						headers: {
-							Authorization: "Bearer " + n,
+							"Authorization": "Bearer " + token,
 							"Content-Type": "application/json"
 						},
-						body: JSON.stringify(a)
+						body: JSON.stringify(body)
 					});
 				}
 			}
 		}
-		if (o.ok || p("powershell -Command \"" + ("$wshell = New-Object -ComObject wscript.shell; Start-Process \"" + e + "\"; Start-Sleep -Seconds 2; $wshell.AppActivate(\"Spotify\"); Start-Sleep -Milliseconds 500; $wshell.SendKeys(\"{ENTER}\")") + "\""), r) {
-			let t = e.split(":track:")[1], r = await fetch("https://api.spotify.com/v1/tracks/" + t, { headers: { Authorization: "Bearer " + n } });
-			if (r.ok) {
-				let t = await r.json();
+		if (!playRes.ok) exec("powershell -Command \"" + ("$wshell = New-Object -ComObject wscript.shell; Start-Process \"" + uri + "\"; Start-Sleep -Seconds 2; $wshell.AppActivate(\"Spotify\"); Start-Sleep -Milliseconds 500; $wshell.SendKeys(\"{ENTER}\")") + "\"");
+		if (isTrack) {
+			const trackId = uri.split(":track:")[1];
+			const infoRes = await fetch("https://api.spotify.com/v1/tracks/" + trackId, { headers: { "Authorization": "Bearer " + token } });
+			if (infoRes.ok) {
+				const data = await infoRes.json();
 				return {
-					name: t.name,
-					artist: t.artists[0]?.name || "Unknown",
-					uri: e
+					name: data.name,
+					artist: data.artists[0]?.name || "Unknown",
+					uri
 				};
 			}
-		} else if (i) {
-			let t = e.split(":playlist:")[1], r = await fetch("https://api.spotify.com/v1/playlists/" + t, { headers: { Authorization: "Bearer " + n } });
-			if (r.ok) {
-				let t = await r.json();
+		} else if (isPlaylist) {
+			const playlistId = uri.split(":playlist:")[1];
+			const infoRes = await fetch("https://api.spotify.com/v1/playlists/" + playlistId, { headers: { "Authorization": "Bearer " + token } });
+			if (infoRes.ok) {
+				const data = await infoRes.json();
 				return {
-					name: t.name,
-					artist: t.owner?.display_name || "Unknown",
-					uri: e
+					name: data.name,
+					artist: data.owner?.display_name || "Unknown",
+					uri
 				};
 			}
 		}
 		return {
 			name: "Track",
 			artist: "Spotify",
-			uri: e
+			uri
 		};
 	} catch (e) {
-		return console.error("playSpotifyUri error", e), null;
+		console.error("playSpotifyUri error", e);
+		return null;
 	}
 }
-var Ce = "", S = !1;
-function we() {
-	return S;
+var lastPlayingTrackId = "";
+var isPlaybackActive = false;
+function isSpotifyPlaying() {
+	return isPlaybackActive;
 }
-function Te(e, t, n) {
-	ve(), console.log("[Spotify Poller] Started - polling every 10s"), setInterval(async () => {
+function startSpotifyPoller(_win, triggerComment, onSongDetected) {
+	loadTokens();
+	console.log("[Spotify Poller] Started - polling every 10s");
+	setInterval(async () => {
 		console.log("[Spotify Poller] Tick - checking current track...");
-		let e = await x();
-		if (!e) {
-			S = !1;
+		const token = await getValidToken();
+		if (!token) {
+			isPlaybackActive = false;
 			return;
 		}
 		try {
-			let r = await fetch("https://api.spotify.com/v1/me/player/currently-playing", { headers: { Authorization: `Bearer ${e}` } });
-			if (r.status === 200) {
-				let e = await r.json();
-				if (e && e.item && e.is_playing) {
-					S = !0;
-					let r = e.item.id, i = e.item.name, a = e.item.artists[0]?.name || "Unknown Artist";
-					r && r !== Ce && (console.log("[Spotify Poller] New track detected:", i, "by", a), Ce = r, Ce !== "" && (t(`You are Zi Feng's Desktop Companion. He is now listening to the song "${i}" by "${a}" on Spotify. Give a very short, 1-sentence spontaneous reaction or comment about this song. Keep it cute and casual.`), n && n(i, a, r)));
-				} else S = !1;
-			} else (r.status === 204 || r.status === 401 || r.status === 403) && (S = !1);
+			const res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", { headers: { "Authorization": `Bearer ${token}` } });
+			if (res.status === 200) {
+				const data = await res.json();
+				if (data && data.item && data.is_playing) {
+					isPlaybackActive = true;
+					const trackId = data.item.id;
+					const trackName = data.item.name;
+					const artistName = data.item.artists[0]?.name || "Unknown Artist";
+					if (trackId && trackId !== lastPlayingTrackId) {
+						console.log("[Spotify Poller] New track detected:", trackName, "by", artistName);
+						lastPlayingTrackId = trackId;
+						if (lastPlayingTrackId !== "") {
+							triggerComment(`You are Zi Feng's Desktop Companion. He is now listening to the song "${trackName}" by "${artistName}" on Spotify. Give a very short, 1-sentence spontaneous reaction or comment about this song. Keep it cute and casual.`);
+							if (onSongDetected) onSongDetected(trackName, artistName, trackId);
+						}
+					}
+				} else isPlaybackActive = false;
+			} else if (res.status === 204) isPlaybackActive = false;
+			else if (res.status === 401 || res.status === 403) isPlaybackActive = false;
 		} catch (e) {
 			console.error("[Spotify Poller] Error:", e);
 		}
@@ -327,58 +406,84 @@ function Te(e, t, n) {
 }
 //#endregion
 //#region electron/activeWindow.ts
-var Ee = ne(p), De = "\nAdd-Type @\"\n  using System;\n  using System.Runtime.InteropServices;\n  public class Win32 {\n    [DllImport(\"user32.dll\")]\n    public static extern IntPtr GetForegroundWindow();\n    [DllImport(\"user32.dll\")]\n    public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);\n  }\n\"@\n$hwnd = [Win32]::GetForegroundWindow()\n$title = New-Object System.Text.StringBuilder 256\n[Win32]::GetWindowText($hwnd, $title, 256) > $null\n$title.ToString()\n";
-async function Oe() {
+var execAsync = promisify(exec);
+var psScript = `
+Add-Type @"
+  using System;
+  using System.Runtime.InteropServices;
+  public class Win32 {
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
+  }
+"@
+$hwnd = [Win32]::GetForegroundWindow()
+$title = New-Object System.Text.StringBuilder 256
+[Win32]::GetWindowText($hwnd, $title, 256) > $null
+$title.ToString()
+`;
+async function getActiveWindowTitle() {
 	try {
-		let e = u(r.getPath("temp"), "active_win.ps1");
-		d.writeFileSync(e, De);
-		let { stdout: t } = await Ee(`powershell -NoProfile -ExecutionPolicy Bypass -File "${e}"`);
+		const tempPath = join(app.getPath("temp"), "active_win.ps1");
+		fs.writeFileSync(tempPath, psScript);
+		const { stdout } = await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tempPath}"`);
 		try {
-			d.unlinkSync(e);
-		} catch {}
-		return t.trim();
-	} catch (e) {
-		return console.error("Failed to get active window title:", e), "";
+			fs.unlinkSync(tempPath);
+		} catch (e) {}
+		return stdout.trim();
+	} catch (error) {
+		console.error("Failed to get active window title:", error);
+		return "";
 	}
 }
 //#endregion
 //#region electron/aiService.ts
-l(te(import.meta.url));
-var ke = u(r.getPath("userData"), "chat_history.json"), C = u(r.getPath("userData"), "memory_store.json"), Ae = u(r.getPath("userData"), "memory_box.json"), je = "http://127.0.0.1:11434/api/chat", Me = "llama3", Ne = 50, w = {
+dirname(fileURLToPath(import.meta.url));
+var HISTORY_FILE = join(app.getPath("userData"), "chat_history.json");
+var MEMORY_STORE_FILE = join(app.getPath("userData"), "memory_store.json");
+var MEMORY_BOX_FILE = join(app.getPath("userData"), "memory_box.json");
+var OLLAMA_API = "http://127.0.0.1:11434/api/chat";
+var MODEL_NAME = "llama3";
+var MAX_MEMORY = 50;
+var memoryStore = {
 	songPlays: {},
 	playlists: [],
 	facts: []
 };
-function Pe() {
-	if (d.existsSync(C)) try {
-		let e = d.readFileSync(C, "utf-8");
-		return JSON.parse(e);
+function loadMemoryStore() {
+	if (fs.existsSync(MEMORY_STORE_FILE)) try {
+		const raw = fs.readFileSync(MEMORY_STORE_FILE, "utf-8");
+		return JSON.parse(raw);
 	} catch (e) {
 		console.error("Failed to parse memory_store.json, migrating...", e);
 	}
-	if (d.existsSync(Ae)) try {
-		let e = d.readFileSync(Ae, "utf-8"), t = JSON.parse(e), n = {
+	if (fs.existsSync(MEMORY_BOX_FILE)) try {
+		const raw = fs.readFileSync(MEMORY_BOX_FILE, "utf-8");
+		const oldBox = JSON.parse(raw);
+		const store = {
 			songPlays: {},
 			playlists: [],
 			facts: []
 		};
-		for (let e of t) {
-			let t = e.match(/User played music: "(.*)" by (.*) \(Spotify URI: (spotify:track:\w+)\)/);
-			if (t) {
-				let [, e, r, i] = t;
-				n.songPlays[i] ? n.songPlays[i].count++ : n.songPlays[i] = {
-					name: e,
-					artist: r,
-					uri: i,
+		for (const entry of oldBox) {
+			const songMatch = entry.match(/User played music: "(.*)" by (.*) \(Spotify URI: (spotify:track:\w+)\)/);
+			if (songMatch) {
+				const [, name, artist, uri] = songMatch;
+				if (!store.songPlays[uri]) store.songPlays[uri] = {
+					name,
+					artist,
+					uri,
 					count: 1
 				};
-			} else n.facts.push(e);
+				else store.songPlays[uri].count++;
+			} else store.facts.push(entry);
 		}
-		d.writeFileSync(C, JSON.stringify(n, null, 2));
+		fs.writeFileSync(MEMORY_STORE_FILE, JSON.stringify(store, null, 2));
 		try {
-			d.unlinkSync(Ae);
+			fs.unlinkSync(MEMORY_BOX_FILE);
 		} catch {}
-		return n;
+		return store;
 	} catch (e) {
 		console.error("Failed to migrate memory_box.json", e);
 	}
@@ -388,265 +493,388 @@ function Pe() {
 		facts: []
 	};
 }
-function T() {
+function saveMemoryStore() {
 	try {
-		console.log("[Memory] Saving to:", C), d.writeFileSync(C, JSON.stringify(w, null, 2));
+		console.log("[Memory] Saving to:", MEMORY_STORE_FILE);
+		fs.writeFileSync(MEMORY_STORE_FILE, JSON.stringify(memoryStore, null, 2));
 	} catch (e) {
-		console.error("[Memory] Failed to save:", C, e);
+		console.error("[Memory] Failed to save:", MEMORY_STORE_FILE, e);
 	}
 }
-function Fe() {
-	let e = [], t = w.facts.filter((e) => !e.startsWith("User is currently looking at:")), n = w.facts.find((e) => e.startsWith("User is currently looking at:"));
-	if (t.length > 0) {
-		e.push("=== FACTS ABOUT THE USER ===");
-		for (let n of t) e.push("- " + n);
-		e.push("");
+function formatMemoryForPrompt() {
+	const lines = [];
+	const facts = memoryStore.facts.filter((f) => !f.startsWith("User is currently looking at:"));
+	const activeWindow = memoryStore.facts.find((f) => f.startsWith("User is currently looking at:"));
+	if (facts.length > 0) {
+		lines.push("=== FACTS ABOUT THE USER ===");
+		for (const f of facts) lines.push("- " + f);
+		lines.push("");
 	}
-	n && (e.push("=== WHAT THE USER IS DOING RIGHT NOW ==="), e.push("- " + n), e.push(""));
-	let r = Object.values(w.songPlays);
-	if (r.length > 0) {
-		e.push("=== SONGS THE USER HAS PLAYED ===");
-		let t = [...r].sort((e, t) => t.count - e.count);
-		for (let n of t) {
-			let t = n.count > 1 ? "times" : "time";
-			e.push("- \"" + n.name + "\" by " + n.artist + " — played " + n.count + " " + t + " (URI: " + n.uri + ")");
+	if (activeWindow) {
+		lines.push("=== WHAT THE USER IS DOING RIGHT NOW ===");
+		lines.push("- " + activeWindow);
+		lines.push("");
+	}
+	const songs = Object.values(memoryStore.songPlays);
+	if (songs.length > 0) {
+		lines.push("=== SONGS THE USER HAS PLAYED ===");
+		const sorted = [...songs].sort((a, b) => b.count - a.count);
+		for (const s of sorted) {
+			const suffix = s.count > 1 ? "times" : "time";
+			lines.push("- \"" + s.name + "\" by " + s.artist + " — played " + s.count + " " + suffix + " (URI: " + s.uri + ")");
 		}
-		e.push("");
+		lines.push("");
 	}
-	if (w.playlists.length > 0) {
-		e.push("=== SAVED PLAYLISTS ===");
-		for (let t of w.playlists) e.push("- " + t.name + " (URI: " + t.uri + ")");
-		e.push("");
+	if (memoryStore.playlists.length > 0) {
+		lines.push("=== SAVED PLAYLISTS ===");
+		for (const p of memoryStore.playlists) lines.push("- " + p.name + " (URI: " + p.uri + ")");
+		lines.push("");
 	}
-	return e.join("\n") || "Nothing remembered yet.";
+	return lines.join("\n") || "Nothing remembered yet.";
 }
-function Ie() {
-	let e = h(), t = `You are the user's Desktop Companion. You are acting as the character ${e.characterName}`;
-	return e.characterTips && (t += ` (${e.characterTips})`), t += `.\n${e.personalityPrompt}\nYou have memory of past conversations.\n`, t + "\nHere is everything you remember about the user:\n\n{MEMORY_BOX}";
+function getSystemPrompt() {
+	const config = getCharacterConfig();
+	let base = `You are the user's Desktop Companion. You are acting as the character ${config.characterName}`;
+	if (config.characterTips) base += ` (${config.characterTips})`;
+	base += `.\n${config.personalityPrompt}\nYou have memory of past conversations.\n`;
+	return base + `
+Here is everything you remember about the user:
+
+{MEMORY_BOX}`;
 }
-var Le = "\n=== INSTRUCTIONS FOR MUSIC ===\nIf the user asks you to play music or open Spotify (especially with a specific song, artist, or playlist), you should reply briefly acknowledging it, and then end your response with one of these tool calls:\n\n1. [TOOL:SPOTIFY:query]\n   Use this when the user asks for a song, artist, or playlist by name. Make the query accurate for Spotify's search. If it's a playlist, include the word 'playlist'.\n   Example: [TOOL:SPOTIFY:double take dhruv]\n   Example: [TOOL:SPOTIFY:chill vibes playlist]\n\n2. [TOOL:SPOTIFY_URI:spotify:xxx]\n   Use this when the user asks to play something that has a known URI in your memory (either from Songs the User Has Played or Saved Playlists).\n   Example: [TOOL:SPOTIFY_URI:spotify:track:12345]\n   Example: [TOOL:SPOTIFY_URI:spotify:playlist:abc123]\n\n3. [TOOL:SAVE_PLAYLIST:name|uri_or_url]\n   Use this when the user gives you a playlist URI or URL and asks you to remember it. The format is the playlist name, then a pipe |, then the URI or URL.\n   Example: [TOOL:SAVE_PLAYLIST:Chill Vibes|spotify:playlist:abc123]\n   Example: [TOOL:SAVE_PLAYLIST:Workout Mix|https://open.spotify.com/playlist/xyz789]\n\n=== INSTRUCTIONS FOR REMEMBERING ===\nIf the user tells you to remember something about them or their preferences, use:\n[TOOL:REMEMBER:fact]\nExample: [TOOL:REMEMBER:User's favorite color is blue]\n\nDo not include extra brackets except for the tool call. If the user asks what you remember or about their listening habits, check the memory sections above.", E = [];
-function Re() {
+var SYSTEM_PROMPT_INSTRUCTIONS = `
+=== INSTRUCTIONS FOR MUSIC ===
+If the user asks you to play music or open Spotify (especially with a specific song, artist, or playlist), you should reply briefly acknowledging it, and then end your response with one of these tool calls:
+
+1. [TOOL:SPOTIFY:query]
+   Use this when the user asks for a song, artist, or playlist by name. Make the query accurate for Spotify's search. If it's a playlist, include the word 'playlist'.
+   Example: [TOOL:SPOTIFY:double take dhruv]
+   Example: [TOOL:SPOTIFY:chill vibes playlist]
+
+2. [TOOL:SPOTIFY_URI:spotify:xxx]
+   Use this when the user asks to play something that has a known URI in your memory (either from Songs the User Has Played or Saved Playlists).
+   Example: [TOOL:SPOTIFY_URI:spotify:track:12345]
+   Example: [TOOL:SPOTIFY_URI:spotify:playlist:abc123]
+
+3. [TOOL:SAVE_PLAYLIST:name|uri_or_url]
+   Use this when the user gives you a playlist URI or URL and asks you to remember it. The format is the playlist name, then a pipe |, then the URI or URL.
+   Example: [TOOL:SAVE_PLAYLIST:Chill Vibes|spotify:playlist:abc123]
+   Example: [TOOL:SAVE_PLAYLIST:Workout Mix|https://open.spotify.com/playlist/xyz789]
+
+=== INSTRUCTIONS FOR REMEMBERING ===
+If the user tells you to remember something about them or their preferences, use:
+[TOOL:REMEMBER:fact]
+Example: [TOOL:REMEMBER:User's favorite color is blue]
+
+Do not include extra brackets except for the tool call. If the user asks what you remember or about their listening habits, check the memory sections above.`;
+var memory = [];
+function loadMemory() {
 	try {
-		if (d.existsSync(ke)) {
-			let e = d.readFileSync(ke, "utf-8");
-			E = JSON.parse(e);
+		if (fs.existsSync(HISTORY_FILE)) {
+			const data = fs.readFileSync(HISTORY_FILE, "utf-8");
+			memory = JSON.parse(data);
 		}
-		w = Pe();
+		memoryStore = loadMemoryStore();
 	} catch (e) {
 		console.error("Failed to load memory", e);
 	}
 }
-function ze() {
+function saveMemory() {
 	try {
-		E.length > Ne && (E = E.slice(E.length - Ne)), d.writeFileSync(ke, JSON.stringify(E)), T();
+		if (memory.length > MAX_MEMORY) memory = memory.slice(memory.length - MAX_MEMORY);
+		fs.writeFileSync(HISTORY_FILE, JSON.stringify(memory));
+		saveMemoryStore();
 	} catch (e) {
 		console.error("Failed to save memory", e);
 	}
 }
-var Be = "";
-function Ve(e) {
-	Re();
-	var t = re.request({
+var lastActiveWindow = "";
+function startAiService(win) {
+	loadMemory();
+	var req = http.request({
 		hostname: "127.0.0.1",
 		port: 11434,
 		path: "/api/tags",
 		method: "GET"
-	}, function(e) {
-		var t = "";
-		e.on("data", function(e) {
-			t += e;
-		}), e.on("end", function() {
+	}, function(res) {
+		var data = "";
+		res.on("data", function(c) {
+			data += c;
+		});
+		res.on("end", function() {
 			try {
-				var e = (JSON.parse(t).models || []).map(function(e) {
-					return e.name;
+				var names = (JSON.parse(data).models || []).map(function(m) {
+					return m.name;
 				}).join(", ");
-				console.log("[Diagnostic] Ollama reachable, models:", e);
+				console.log("[Diagnostic] Ollama reachable, models:", names);
 			} catch (e) {
 				console.error("[Diagnostic] Parse error:", e.message);
 			}
 		});
 	});
-	t.on("error", function(e) {
+	req.on("error", function(e) {
 		console.error("[Diagnostic] Ollama unreachable:", e.message);
-	}), t.end();
-	let n = async (t) => {
-		console.log("[Spontaneous] Calling Ollama with:", t.substring(0, 80) + "...");
+	});
+	req.end();
+	const triggerSpontaneousComment = async (systemPrompt) => {
+		console.log("[Spontaneous] Calling Ollama with:", systemPrompt.substring(0, 80) + "...");
 		try {
-			let n = JSON.stringify({
-				model: Me,
+			const postData = JSON.stringify({
+				model: MODEL_NAME,
 				messages: [{
 					role: "system",
-					content: t
+					content: systemPrompt
 				}],
-				stream: !1
+				stream: false
 			});
-			console.log("[Spontaneous] POST body size:", n.length);
-			let r = await new Promise(function(e, t) {
-				var r = re.request({
+			console.log("[Spontaneous] POST body size:", postData.length);
+			const result = await new Promise(function(resolve, reject) {
+				var req = http.request({
 					hostname: "127.0.0.1",
 					port: 11434,
 					path: "/api/chat",
 					method: "POST",
 					headers: { "Content-Type": "application/json" }
-				}, function(n) {
-					var r = "";
-					n.on("data", function(e) {
-						r += e;
-					}), n.on("end", function() {
-						e(r);
-					}), n.on("error", function(e) {
-						t(e);
+				}, function(res) {
+					var body = "";
+					res.on("data", function(chunk) {
+						body += chunk;
+					});
+					res.on("end", function() {
+						resolve(body);
+					});
+					res.on("error", function(e) {
+						reject(e);
 					});
 				});
-				r.on("error", function(e) {
-					t(e);
+				req.on("error", function(e) {
+					reject(e);
 				});
-				var i = setTimeout(function() {
-					console.log("[Spontaneous] Request timed out, destroying"), r.destroy(), t(/* @__PURE__ */ Error("Timeout"));
+				var timer = setTimeout(function() {
+					console.log("[Spontaneous] Request timed out, destroying");
+					req.destroy();
+					reject(/* @__PURE__ */ new Error("Timeout"));
 				}, 25e3);
-				r.on("response", function() {
-					console.log("[Spontaneous] Got response headers, clearing timeout"), clearTimeout(i);
-				}), r.write(n), r.end();
+				req.on("response", function() {
+					console.log("[Spontaneous] Got response headers, clearing timeout");
+					clearTimeout(timer);
+				});
+				req.write(postData);
+				req.end();
 			});
 			console.log("[Spontaneous] Got response, parsing...");
-			let i = JSON.parse(r);
-			i.message && i.message.content ? (console.log("[Spontaneous] Ollama replied, sending to renderer:", i.message.content.substring(0, 60)), e.webContents.send("proactive-message", i.message.content)) : console.error("[Spontaneous] Unexpected Ollama response:", r.substring(0, 200));
+			const parsed = JSON.parse(result);
+			if (parsed.message && parsed.message.content) {
+				console.log("[Spontaneous] Ollama replied, sending to renderer:", parsed.message.content.substring(0, 60));
+				win.webContents.send("proactive-message", parsed.message.content);
+			} else console.error("[Spontaneous] Unexpected Ollama response:", result.substring(0, 200));
 		} catch (e) {
 			console.error("Failed spontaneous reaction", e);
 		}
 	};
 	setInterval(async () => {
-		let e = await Oe();
-		e && e !== Be && !e.includes("My-Buddy") && !e.includes("Taskbar") && (Be = e, w.facts = w.facts.filter((e) => !e.startsWith("User is currently looking at:")), w.facts.push("User is currently looking at: " + e), T(), Math.random() < .3 && n(Ie() + "\n" + Le + "\nThe user just opened an app called \"" + e + "\". Give a very short, 1-sentence spontaneous reaction or comment about it."));
-	}, 15e3), Te(e, n, function(e, t, n) {
-		console.log("[Memory] Poller detected song:", e, "by", t), He(e, t, "spotify:track:" + n);
+		const activeWindow = await getActiveWindowTitle();
+		if (activeWindow && activeWindow !== lastActiveWindow && !activeWindow.includes("My-Buddy") && !activeWindow.includes("Taskbar")) {
+			lastActiveWindow = activeWindow;
+			memoryStore.facts = memoryStore.facts.filter((f) => !f.startsWith("User is currently looking at:"));
+			memoryStore.facts.push("User is currently looking at: " + activeWindow);
+			saveMemoryStore();
+			if (Math.random() < .3) triggerSpontaneousComment(getSystemPrompt() + "\n" + SYSTEM_PROMPT_INSTRUCTIONS + "\nThe user just opened an app called \"" + activeWindow + "\". Give a very short, 1-sentence spontaneous reaction or comment about it.");
+		}
+	}, 15e3);
+	startSpotifyPoller(win, triggerSpontaneousComment, function(name, artist, trackId) {
+		console.log("[Memory] Poller detected song:", name, "by", artist);
+		incrementSongPlay(name, artist, "spotify:track:" + trackId);
 	});
-	let r = 0;
+	let lastPlaylistSuggestionTime = 0;
 	setInterval(async () => {
-		if (we() || Math.random() >= .07) return;
-		let e = Date.now();
-		if (e - r < 720 * 1e3) return;
-		r = e;
-		let t = w.playlists, i = "";
-		t.length > 0 && (i = "Here are his saved playlists:\n" + t.map(function(e) {
-			return "- " + e.name + " (" + e.uri + ")";
-		}).join("\n")), n(Ie() + "\n" + Le + "\nThe user is not currently listening to music or playing anything on Spotify. Suggest if they would like to play one of their favorite playlists. " + i + " Keep it short, 1 sentence, casual and cute. Mention a specific playlist name if you know one.");
-	}, 240 * 1e3), o.handle("send-to-ollama", async (t, n) => {
-		E.push({
+		if (isSpotifyPlaying()) return;
+		if (Math.random() >= .07) return;
+		const now = Date.now();
+		if (now - lastPlaylistSuggestionTime < 720 * 1e3) return;
+		lastPlaylistSuggestionTime = now;
+		const playlists = memoryStore.playlists;
+		let ctx = "";
+		if (playlists.length > 0) ctx = "Here are his saved playlists:\n" + playlists.map(function(p) {
+			return "- " + p.name + " (" + p.uri + ")";
+		}).join("\n");
+		triggerSpontaneousComment(getSystemPrompt() + "\n" + SYSTEM_PROMPT_INSTRUCTIONS + "\nThe user is not currently listening to music or playing anything on Spotify. Suggest if they would like to play one of their favorite playlists. " + ctx + " Keep it short, 1 sentence, casual and cute. Mention a specific playlist name if you know one.");
+	}, 240 * 1e3);
+	ipcMain.handle("send-to-ollama", async (_event, prompt) => {
+		memory.push({
 			role: "user",
-			content: n
+			content: prompt
 		});
-		let r = await Ue(), i = r.match(/\[?TOOL:SPOTIFY:([^\]\n]+)\]?/i), a = r.match(/\[?TOOL:SPOTIFY_URI:([^\]\n]+)\]?/i), o = r.match(/\[?TOOL:REMEMBER:([^\]\n]+)\]?/i), s = r.match(/\[?TOOL:SAVE_PLAYLIST:([^\]\n|]+)\|([^\]\n]+)\]?/i), c = r;
-		if (a) {
-			let t = a[1].trim();
-			c = c.replace(a[0], "").trim(), c ||= "Playing from memory!", Se(t, e).then((e) => {
-				e && e.uri.includes(":track:") && He(e.name, e.artist, e.uri);
-			}).catch(console.error), E.push({
+		const response = await generateOllamaChat();
+		const spotifyMatch = response.match(/\[?TOOL:SPOTIFY:([^\]\n]+)\]?/i);
+		const spotifyUriMatch = response.match(/\[?TOOL:SPOTIFY_URI:([^\]\n]+)\]?/i);
+		const rememberMatch = response.match(/\[?TOOL:REMEMBER:([^\]\n]+)\]?/i);
+		const savePlaylistMatch = response.match(/\[?TOOL:SAVE_PLAYLIST:([^\]\n|]+)\|([^\]\n]+)\]?/i);
+		let finalResponse = response;
+		if (spotifyUriMatch) {
+			const uri = spotifyUriMatch[1].trim();
+			finalResponse = finalResponse.replace(spotifyUriMatch[0], "").trim();
+			if (!finalResponse) finalResponse = "Playing from memory!";
+			playSpotifyUri(uri, win).then((playedMetadata) => {
+				if (playedMetadata && playedMetadata.uri.includes(":track:")) incrementSongPlay(playedMetadata.name, playedMetadata.artist, playedMetadata.uri);
+			}).catch(console.error);
+			memory.push({
 				role: "system",
-				content: "System action executed: Playing Spotify URI " + t
+				content: "System action executed: Playing Spotify URI " + uri
 			});
 		}
-		if (i) {
-			let t = i[1].trim();
-			c = c.replace(i[0], "").trim(), c ||= "Playing " + t + " on Spotify!", xe(t, e).then((e) => {
-				e && He(e.name, e.artist, e.uri);
-			}).catch(console.error), E.push({
+		if (spotifyMatch) {
+			const query = spotifyMatch[1].trim();
+			finalResponse = finalResponse.replace(spotifyMatch[0], "").trim();
+			if (!finalResponse) finalResponse = "Playing " + query + " on Spotify!";
+			playSpotifyQuery(query, win).then((playedMetadata) => {
+				if (playedMetadata) incrementSongPlay(playedMetadata.name, playedMetadata.artist, playedMetadata.uri);
+			}).catch(console.error);
+			memory.push({
 				role: "system",
-				content: "System action executed: Searching and playing Spotify for " + t
+				content: "System action executed: Searching and playing Spotify for " + query
 			});
 		}
-		if (o) {
-			let e = o[1].trim();
-			c = c.replace(o[0], "").trim(), c ||= "Got it, I'll remember that!", w.facts.includes(e) || (w.facts.push(e), T()), E.push({
-				role: "system",
-				content: "System action executed: Saved \"" + e + "\" to long term memory."
-			});
-		}
-		if (s) {
-			let e = s[1].trim(), t = s[2].trim(), n = t.match(/open\.spotify\.com\/(track|playlist|album)\/([a-zA-Z0-9]+)/);
-			if (n) {
-				let e = n[1], r = n[2];
-				t = "spotify:" + e + ":" + r;
+		if (rememberMatch) {
+			const fact = rememberMatch[1].trim();
+			finalResponse = finalResponse.replace(rememberMatch[0], "").trim();
+			if (!finalResponse) finalResponse = "Got it, I'll remember that!";
+			if (!memoryStore.facts.includes(fact)) {
+				memoryStore.facts.push(fact);
+				saveMemoryStore();
 			}
-			c = c.replace(s[0], "").trim(), c ||= "Saved the playlist \"" + e + "\"!", w.playlists = w.playlists.filter((e) => e.uri !== t), w.playlists.push({
-				name: e,
-				uri: t
-			}), T(), E.push({
+			memory.push({
 				role: "system",
-				content: "System action executed: Saved playlist \"" + e + "\" (" + t + ") to memory."
+				content: "System action executed: Saved \"" + fact + "\" to long term memory."
 			});
 		}
-		return E.push({
+		if (savePlaylistMatch) {
+			const name = savePlaylistMatch[1].trim();
+			let uri = savePlaylistMatch[2].trim();
+			const urlMatch = uri.match(/open\.spotify\.com\/(track|playlist|album)\/([a-zA-Z0-9]+)/);
+			if (urlMatch) {
+				const type = urlMatch[1];
+				const id = urlMatch[2];
+				uri = "spotify:" + type + ":" + id;
+			}
+			finalResponse = finalResponse.replace(savePlaylistMatch[0], "").trim();
+			if (!finalResponse) finalResponse = "Saved the playlist \"" + name + "\"!";
+			memoryStore.playlists = memoryStore.playlists.filter((p) => p.uri !== uri);
+			memoryStore.playlists.push({
+				name,
+				uri
+			});
+			saveMemoryStore();
+			memory.push({
+				role: "system",
+				content: "System action executed: Saved playlist \"" + name + "\" (" + uri + ") to memory."
+			});
+		}
+		memory.push({
 			role: "assistant",
-			content: c
-		}), ze(), c;
-	}), o.on("add-manual-memory", (e, t) => {
-		t.trim() !== "" && (w.facts.push(t.trim()), T());
-	}), o.handle("get-memory-store", async () => JSON.parse(JSON.stringify(w))), o.handle("save-playlist-memory", async (e, t, n) => (w.playlists = w.playlists.filter((e) => e.uri !== n), w.playlists.push({
-		name: t,
-		uri: n
-	}), T(), !0)), o.handle("clear-song-count", async (e, t) => (w.songPlays[t] && (delete w.songPlays[t], T()), !0));
+			content: finalResponse
+		});
+		saveMemory();
+		return finalResponse;
+	});
+	ipcMain.on("add-manual-memory", (_event, manualMemory) => {
+		if (manualMemory.trim() !== "") {
+			memoryStore.facts.push(manualMemory.trim());
+			saveMemoryStore();
+		}
+	});
+	ipcMain.handle("get-memory-store", async () => {
+		return JSON.parse(JSON.stringify(memoryStore));
+	});
+	ipcMain.handle("save-playlist-memory", async (_event, name, uri) => {
+		memoryStore.playlists = memoryStore.playlists.filter((p) => p.uri !== uri);
+		memoryStore.playlists.push({
+			name,
+			uri
+		});
+		saveMemoryStore();
+		return true;
+	});
+	ipcMain.handle("clear-song-count", async (_event, uri) => {
+		if (memoryStore.songPlays[uri]) {
+			delete memoryStore.songPlays[uri];
+			saveMemoryStore();
+		}
+		return true;
+	});
 }
-function He(e, t, n) {
-	console.log("[Memory] incrementSongPlay:", e, "by", t, "uri:", n), w.songPlays[n] ? (w.songPlays[n].count++, w.songPlays[n].name = e, w.songPlays[n].artist = t) : w.songPlays[n] = {
-		name: e,
-		artist: t,
-		uri: n,
+function incrementSongPlay(name, artist, uri) {
+	console.log("[Memory] incrementSongPlay:", name, "by", artist, "uri:", uri);
+	if (memoryStore.songPlays[uri]) {
+		memoryStore.songPlays[uri].count++;
+		memoryStore.songPlays[uri].name = name;
+		memoryStore.songPlays[uri].artist = artist;
+	} else memoryStore.songPlays[uri] = {
+		name,
+		artist,
+		uri,
 		count: 1
-	}, T();
+	};
+	saveMemoryStore();
 }
-async function Ue() {
+async function generateOllamaChat() {
 	try {
-		let e = Fe(), t = [{
+		const memoryFacts = formatMemoryForPrompt();
+		const messages = [{
 			role: "system",
-			content: (Ie() + "\n" + Le).replace("{MEMORY_BOX}", e)
-		}, ...E], n = await fetch(je, {
+			content: (getSystemPrompt() + "\n" + SYSTEM_PROMPT_INSTRUCTIONS).replace("{MEMORY_BOX}", memoryFacts)
+		}, ...memory];
+		const res = await fetch(OLLAMA_API, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
-				model: Me,
-				messages: t,
-				stream: !1
+				model: MODEL_NAME,
+				messages,
+				stream: false
 			})
 		});
-		if (!n.ok) {
-			let e = await n.text();
-			throw Error("HTTP error! status: " + n.status + ", body: " + e);
+		if (!res.ok) {
+			const errText = await res.text();
+			throw new Error("HTTP error! status: " + res.status + ", body: " + errText);
 		}
-		return (await n.json()).message.content;
-	} catch (e) {
-		return console.error("[Ollama API] Error:", e.message), e.message.includes("404") ? "Error: Ollama model 'llama3' not found. Please run `ollama run llama3` in your terminal to download it." : "Connection to local AI failed. Is Ollama running?";
+		return (await res.json()).message.content;
+	} catch (error) {
+		console.error("[Ollama API] Error:", error.message);
+		if (error.message.includes("404")) return "Error: Ollama model 'llama3' not found. Please run `ollama run llama3` in your terminal to download it.";
+		return "Connection to local AI failed. Is Ollama running?";
 	}
 }
 //#endregion
 //#region electron/avatarService.ts
-var We = r.getPath("userData"), D = u(We, "avatars"), Ge = u(We, "avatar-config.json");
-async function Ke() {
+var USER_DATA_PATH$1 = app.getPath("userData");
+var AVATAR_DIR = join(USER_DATA_PATH$1, "avatars");
+var CONFIG_PATH = join(USER_DATA_PATH$1, "avatar-config.json");
+async function initDir$1() {
 	try {
-		await f.mkdir(D, { recursive: !0 });
-	} catch (e) {
-		console.error("Failed to create avatars directory:", e);
+		await promises.mkdir(AVATAR_DIR, { recursive: true });
+	} catch (err) {
+		console.error("Failed to create avatars directory:", err);
 	}
 }
-Ke();
-async function O() {
+initDir$1();
+async function getAvatarConfig() {
 	try {
-		let e = await f.readFile(Ge, "utf-8");
-		return JSON.parse(e);
-	} catch {
+		const data = await promises.readFile(CONFIG_PATH, "utf-8");
+		return JSON.parse(data);
+	} catch (err) {
 		return {};
 	}
 }
-async function qe(e) {
+async function saveAvatarConfig(config) {
 	try {
-		await f.writeFile(Ge, JSON.stringify(e, null, 2));
-	} catch (e) {
-		console.error("Failed to save avatar config:", e);
+		await promises.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2));
+	} catch (err) {
+		console.error("Failed to save avatar config:", err);
 	}
 }
-async function Je(e, t) {
-	let n = await i.showOpenDialog(e, {
-		title: `Select Avatar Image for ${t}`,
+async function selectAndCopyAvatarImage(window, state) {
+	const result = await dialog.showOpenDialog(window, {
+		title: `Select Avatar Image for ${state}`,
 		properties: ["openFile"],
 		filters: [{
 			name: "Images",
@@ -659,71 +887,94 @@ async function Je(e, t) {
 			]
 		}]
 	});
-	if (n.canceled || n.filePaths.length === 0) return null;
-	let r = n.filePaths[0], a = ee(r), o = u(D, `${t}_${Date.now()}${a}`);
+	if (result.canceled || result.filePaths.length === 0) return null;
+	const sourcePath = result.filePaths[0];
+	const ext = extname(sourcePath);
+	const destPath = join(AVATAR_DIR, `${state}_${Date.now()}${ext}`);
 	try {
-		await f.copyFile(r, o);
-		let e = await O();
-		if (e[t]) try {
-			await f.unlink(e[t]);
-		} catch {}
-		return e[t] = o, await qe(e), e;
-	} catch (e) {
-		return console.error(`Failed to copy avatar image for ${t}:`, e), null;
+		await promises.copyFile(sourcePath, destPath);
+		const config = await getAvatarConfig();
+		if (config[state]) try {
+			await promises.unlink(config[state]);
+		} catch (e) {}
+		config[state] = destPath;
+		await saveAvatarConfig(config);
+		return config;
+	} catch (err) {
+		console.error(`Failed to copy avatar image for ${state}:`, err);
+		return null;
 	}
 }
-async function Ye(e) {
-	let t = await O();
-	if (t[e]) {
+async function resetAvatarImage(state) {
+	const config = await getAvatarConfig();
+	if (config[state]) {
 		try {
-			await f.unlink(t[e]);
-		} catch {}
-		delete t[e], await qe(t);
+			await promises.unlink(config[state]);
+		} catch (e) {}
+		delete config[state];
+		await saveAvatarConfig(config);
 	}
-	return t;
+	return config;
 }
-async function Xe(e) {
-	let t = await O();
-	for (let [n, r] of Object.entries(e)) {
-		let e = r.replace(/^data:image\/\w+;base64,/, ""), i = Buffer.from(e, "base64"), a = u(D, `${n}_${Date.now()}.png`);
+async function saveGeneratedAvatarSet(images) {
+	const config = await getAvatarConfig();
+	for (const [state, base64Str] of Object.entries(images)) {
+		const base64Data = base64Str.replace(/^data:image\/\w+;base64,/, "");
+		const buffer = Buffer.from(base64Data, "base64");
+		const destPath = join(AVATAR_DIR, `${state}_${Date.now()}.png`);
 		try {
-			if (await f.writeFile(a, i), t[n]) try {
-				await f.unlink(t[n]);
-			} catch {}
-			t[n] = a;
-		} catch (e) {
-			console.error(`Failed to save generated avatar image for ${n}:`, e);
+			await promises.writeFile(destPath, buffer);
+			if (config[state]) try {
+				await promises.unlink(config[state]);
+			} catch (e) {}
+			config[state] = destPath;
+		} catch (err) {
+			console.error(`Failed to save generated avatar image for ${state}:`, err);
 		}
 	}
-	return await qe(t), t;
+	await saveAvatarConfig(config);
+	return config;
 }
 //#endregion
 //#region electron/avatarMarketplace.ts
-var Ze = r.getPath("userData"), k = u(Ze, "bundles"), A = u(k, "marketplace.json"), j = "https://raw.githubusercontent.com/Qimmeh/My-Buddy-Marketplace/main";
-async function Qe() {
+var USER_DATA_PATH = app.getPath("userData");
+var BUNDLES_DIR = join(USER_DATA_PATH, "bundles");
+var MARKETPLACE_INDEX = join(BUNDLES_DIR, "marketplace.json");
+var CLOUD_REPO_URL = "https://raw.githubusercontent.com/Qimmeh/My-Buddy-Marketplace/main";
+async function initDir() {
 	try {
-		await f.mkdir(k, { recursive: !0 });
+		await promises.mkdir(BUNDLES_DIR, { recursive: true });
 	} catch {
-		await f.mkdir(k, { recursive: !0 });
+		await promises.mkdir(BUNDLES_DIR, { recursive: true });
 	}
 }
-Qe();
-function $e(e) {
-	return e.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + Date.now().toString(36);
+initDir();
+function generateId(name) {
+	return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + Date.now().toString(36);
 }
-async function et(e, t) {
-	let n = ie("sha256"), r = Object.keys(e).sort();
-	for (let t of r) if (!t.startsWith("_")) try {
-		let r = await f.readFile(e[t]);
-		n.update(r);
-	} catch {}
-	return t && (n.update(t.characterName || ""), n.update(t.themeColor || ""), n.update(t.personalityPrompt || "")), n.digest("hex");
+async function computeHash(config, charConfig) {
+	const hash = createHash("sha256");
+	const sortedStates = Object.keys(config).sort();
+	for (const state of sortedStates) {
+		if (state.startsWith("_")) continue;
+		try {
+			const buf = await promises.readFile(config[state]);
+			hash.update(buf);
+		} catch {}
+	}
+	if (charConfig) {
+		hash.update(charConfig.characterName || "");
+		hash.update(charConfig.themeColor || "");
+		hash.update(charConfig.personalityPrompt || "");
+	}
+	return hash.digest("hex");
 }
-async function tt(e, t, n, r, i) {
-	let a = $e(e), o = u(k, a);
-	await f.mkdir(o, { recursive: !0 });
-	let s = {};
-	for (let e of [
+async function createBundle(name, author, description, config, charConfig) {
+	const id = generateId(name);
+	const bundleDir = join(BUNDLES_DIR, id);
+	await promises.mkdir(bundleDir, { recursive: true });
+	const images = {};
+	for (const state of [
 		"idle",
 		"active",
 		"very-active",
@@ -739,145 +990,201 @@ async function tt(e, t, n, r, i) {
 		"glance-left",
 		"glance-right",
 		"look-around"
-	]) if (r[e]) {
-		let t = e + (ee(r[e]) || ".png");
+	]) if (config[state]) {
+		const filename = state + (extname(config[state]) || ".png");
 		try {
-			await f.copyFile(r[e], u(o, t)), s[e] = t;
+			await promises.copyFile(config[state], join(bundleDir, filename));
+			images[state] = filename;
 		} catch {}
 	}
-	let c = Object.keys(s)[0] || "idle", l = await et(r, i), te = await rt();
-	for (let e of te) if (e.hash === l) throw Error("DUPLICATE_BUNDLE: This exact avatar set is already bundled as \"" + e.name + "\"");
-	let d = {
-		id: a,
-		name: e,
-		author: t,
+	const thumbnailState = Object.keys(images)[0] || "idle";
+	const hash = await computeHash(config, charConfig);
+	const existingBundles = await listBundles();
+	for (const bundle of existingBundles) if (bundle.hash === hash) throw new Error("DUPLICATE_BUNDLE: This exact avatar set is already bundled as \"" + bundle.name + "\"");
+	const manifest = {
+		id,
+		name,
+		author,
 		version: "1.0.0",
-		description: n,
-		images: s,
-		hash: l,
-		thumbnailState: c,
+		description,
+		images,
+		hash,
+		thumbnailState,
 		createdAt: Date.now(),
-		characterName: i?.characterName,
-		characterTips: i?.characterTips,
-		personalityPrompt: i?.personalityPrompt,
-		themeColor: i?.themeColor
+		characterName: charConfig?.characterName,
+		characterTips: charConfig?.characterTips,
+		personalityPrompt: charConfig?.personalityPrompt,
+		themeColor: charConfig?.themeColor
 	};
-	await f.writeFile(u(o, "manifest.json"), JSON.stringify(d, null, 2));
-	let p = await M();
-	return p.push({
-		id: a,
-		name: e,
-		author: t,
+	await promises.writeFile(join(bundleDir, "manifest.json"), JSON.stringify(manifest, null, 2));
+	const marketplace = await loadMarketplace();
+	marketplace.push({
+		id,
+		name,
+		author,
 		version: "1.0.0",
-		description: n,
-		hash: l,
-		thumbnailState: c,
-		createdAt: d.createdAt
-	}), p.sort((e, t) => e.name.localeCompare(t.name)), await f.writeFile(A, JSON.stringify(p, null, 2)), d;
+		description,
+		hash,
+		thumbnailState,
+		createdAt: manifest.createdAt
+	});
+	marketplace.sort((a, b) => a.name.localeCompare(b.name));
+	await promises.writeFile(MARKETPLACE_INDEX, JSON.stringify(marketplace, null, 2));
+	return manifest;
 }
-async function nt(e, t) {
-	let n = u(k, e), r = u(n, "manifest.json"), i;
+async function installBundle(bundleId, targetConfig) {
+	const bundleDir = join(BUNDLES_DIR, bundleId);
+	const manifestPath = join(bundleDir, "manifest.json");
+	let manifestData;
 	try {
-		i = await f.readFile(r, "utf-8");
-	} catch {
+		manifestData = await promises.readFile(manifestPath, "utf-8");
+	} catch (err) {
 		try {
-			let t = await fetch(`${j}/${e}/manifest.json`);
-			if (!t.ok) throw Error("Not found on cloud");
-			let a = await t.json();
-			await f.mkdir(n, { recursive: !0 });
-			let o = Object.keys(a.images);
-			for (let t of o) {
-				let r = a.images[t], i = await fetch(`${j}/${e}/${r}`);
-				if (i.ok) {
-					let e = await i.arrayBuffer();
-					await f.writeFile(u(n, r), Buffer.from(e));
+			const response = await fetch(`${CLOUD_REPO_URL}/${bundleId}/manifest.json`);
+			if (!response.ok) throw new Error("Not found on cloud");
+			const cloudManifest = await response.json();
+			await promises.mkdir(bundleDir, { recursive: true });
+			const stateOrder = Object.keys(cloudManifest.images);
+			for (const state of stateOrder) {
+				const filename = cloudManifest.images[state];
+				const imgResponse = await fetch(`${CLOUD_REPO_URL}/${bundleId}/${filename}`);
+				if (imgResponse.ok) {
+					const buffer = await imgResponse.arrayBuffer();
+					await promises.writeFile(join(bundleDir, filename), Buffer.from(buffer));
 				}
 			}
-			await f.writeFile(r, JSON.stringify(a, null, 2));
-			let s = await M();
-			s.push({
-				id: a.id,
-				name: a.name,
-				author: a.author,
-				version: a.version,
-				description: a.description,
-				hash: a.hash,
-				thumbnailState: a.thumbnailState,
-				createdAt: a.createdAt
-			}), await f.writeFile(A, JSON.stringify(s, null, 2)), i = JSON.stringify(a);
-		} catch {
-			throw Error("Bundle not found locally or on cloud: " + e);
+			await promises.writeFile(manifestPath, JSON.stringify(cloudManifest, null, 2));
+			const marketplace = await loadMarketplace();
+			marketplace.push({
+				id: cloudManifest.id,
+				name: cloudManifest.name,
+				author: cloudManifest.author,
+				version: cloudManifest.version,
+				description: cloudManifest.description,
+				hash: cloudManifest.hash,
+				thumbnailState: cloudManifest.thumbnailState,
+				createdAt: cloudManifest.createdAt
+			});
+			await promises.writeFile(MARKETPLACE_INDEX, JSON.stringify(marketplace, null, 2));
+			manifestData = JSON.stringify(cloudManifest);
+		} catch (cloudErr) {
+			throw new Error("Bundle not found locally or on cloud: " + bundleId);
 		}
 	}
 	try {
-		let t = JSON.parse(i), r = {}, a = Object.keys(t.images);
-		for (let e of a) {
-			let i = t.images[e], a = u(n, i);
+		const manifest = JSON.parse(manifestData);
+		const newConfig = {};
+		const stateOrder = Object.keys(manifest.images);
+		for (const state of stateOrder) {
+			const filename = manifest.images[state];
+			const sourcePath = join(bundleDir, filename);
 			try {
-				await f.access(a);
-				let t = ee(i), n = u(Ze, "avatars", e + "_" + Date.now() + t);
-				if (await f.copyFile(a, n), r[e]) try {
-					await f.unlink(r[e]);
+				await promises.access(sourcePath);
+				const ext = extname(filename);
+				const destPath = join(USER_DATA_PATH, "avatars", state + "_" + Date.now() + ext);
+				await promises.copyFile(sourcePath, destPath);
+				if (newConfig[state]) try {
+					await promises.unlink(newConfig[state]);
 				} catch {}
-				r[e] = n;
+				newConfig[state] = destPath;
 			} catch {}
 		}
-		return r._bundleId = e, r._bundleHash = t.hash, {
-			newConfig: r,
-			manifest: t
+		newConfig["_bundleId"] = bundleId;
+		newConfig["_bundleHash"] = manifest.hash;
+		return {
+			newConfig,
+			manifest
 		};
-	} catch {
-		throw Error("Failed to install bundle: " + e);
+	} catch (err) {
+		throw new Error("Failed to install bundle: " + bundleId);
 	}
 }
-async function rt() {
-	let e = await M(), t = [], n = /* @__PURE__ */ new Set();
-	for (let r of e) try {
-		let e = u(k, r.id, "manifest.json"), i = await f.readFile(e, "utf-8"), a = JSON.parse(i);
-		a.imageUrls = {};
-		for (let e in a.images) a.imageUrls[e] = "file://" + u(k, r.id, a.images[e]).replace(/\\/g, "/");
-		a.images && a.thumbnailState && a.images[a.thumbnailState] && (a.thumbnailUrl = a.imageUrls[a.thumbnailState]), a.isCloud = !1, t.push(a), n.add(a.id);
+async function listBundles() {
+	const marketplace = await loadMarketplace();
+	const bundles = [];
+	const localIds = /* @__PURE__ */ new Set();
+	for (const entry of marketplace) try {
+		const manifestPath = join(BUNDLES_DIR, entry.id, "manifest.json");
+		const data = await promises.readFile(manifestPath, "utf-8");
+		const manifest = JSON.parse(data);
+		manifest.imageUrls = {};
+		for (const state in manifest.images) manifest.imageUrls[state] = "file://" + join(BUNDLES_DIR, entry.id, manifest.images[state]).replace(/\\/g, "/");
+		if (manifest.images && manifest.thumbnailState && manifest.images[manifest.thumbnailState]) manifest.thumbnailUrl = manifest.imageUrls[manifest.thumbnailState];
+		manifest.isCloud = false;
+		bundles.push(manifest);
+		localIds.add(manifest.id);
 	} catch {}
 	try {
-		let e = await fetch(`${j}/index.json?t=${Date.now()}`);
-		if (e.ok) {
-			let r = await e.json();
-			for (let e of r) if (!n.has(e.id)) {
-				let n = await fetch(`${j}/${e.id}/manifest.json?t=${Date.now()}`);
-				if (n.ok) {
-					let r = await n.json();
-					r.imageUrls = {};
-					for (let t in r.images) r.imageUrls[t] = `${j}/${e.id}/${r.images[t]}?t=${Date.now()}`;
-					r.images && r.thumbnailState && r.images[r.thumbnailState] && (r.thumbnailUrl = r.imageUrls[r.thumbnailState]), r.isCloud = !0, t.push(r);
+		const response = await fetch(`${CLOUD_REPO_URL}/index.json?t=${Date.now()}`);
+		if (response.ok) {
+			const cloudBundles = await response.json();
+			for (const entry of cloudBundles) if (!localIds.has(entry.id)) {
+				const manifestResponse = await fetch(`${CLOUD_REPO_URL}/${entry.id}/manifest.json?t=${Date.now()}`);
+				if (manifestResponse.ok) {
+					const manifest = await manifestResponse.json();
+					manifest.imageUrls = {};
+					for (const state in manifest.images) manifest.imageUrls[state] = `${CLOUD_REPO_URL}/${entry.id}/${manifest.images[state]}?t=${Date.now()}`;
+					if (manifest.images && manifest.thumbnailState && manifest.images[manifest.thumbnailState]) manifest.thumbnailUrl = manifest.imageUrls[manifest.thumbnailState];
+					manifest.isCloud = true;
+					bundles.push(manifest);
 				}
 			}
 		}
-	} catch (e) {
-		console.error("Failed to fetch cloud marketplace", e);
+	} catch (err) {
+		console.error("Failed to fetch cloud marketplace", err);
 	}
-	return t.sort((e, t) => (t.createdAt || 0) - (e.createdAt || 0)), t;
+	bundles.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+	return bundles;
 }
-async function M() {
+async function loadMarketplace() {
 	try {
-		let e = await f.readFile(A, "utf-8");
-		return JSON.parse(e);
+		const data = await promises.readFile(MARKETPLACE_INDEX, "utf-8");
+		return JSON.parse(data);
 	} catch {
 		return [];
 	}
 }
-async function it(e) {
-	let t = u(k, e);
+async function deleteBundle(bundleId) {
+	const bundleDir = join(BUNDLES_DIR, bundleId);
 	try {
-		await f.rm(t, {
-			recursive: !0,
-			force: !0
+		await promises.rm(bundleDir, {
+			recursive: true,
+			force: true
 		});
 	} catch {}
-	let n = (await M()).filter((t) => t.id !== e);
-	await f.writeFile(A, JSON.stringify(n, null, 2));
+	const updated = (await loadMarketplace()).filter((b) => b.id !== bundleId);
+	await promises.writeFile(MARKETPLACE_INDEX, JSON.stringify(updated, null, 2));
 }
-ge(), r.commandLine.appendSwitch("disable-backgrounding-occluded-windows", "true"), r.commandLine.appendSwitch("disable-renderer-backgrounding", "true"), r.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
-var N = l(te(import.meta.url)), at = u(N, "preload.js"), P = null, F = null, I = "User", ot = u(r.getPath("userData"), "user-name.json"), L = 0, R = 0, z = 2, B = 1.5, V = 0, H = 0, U = 0, W = 45, G = "avatar", st = "", K = !1, ct = 0, lt = 0, q = Date.now(), J = "neutral", Y = !1, ut = 0, X = !1, dt = !1, ft = [
+//#endregion
+//#region electron/main.ts
+loadSpotifyConfig();
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows", "true");
+app.commandLine.appendSwitch("disable-renderer-backgrounding", "true");
+app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
+var __dirname = dirname(fileURLToPath(import.meta.url));
+var preload = join(__dirname, "preload.js");
+var win = null;
+var tray = null;
+var isQuitting = false;
+var userName = "User";
+var USER_NAME_PATH = join(app.getPath("userData"), "user-name.json");
+var px = 0, py = 0;
+var vx = 2, vy = 1.5;
+var targetX = 0, targetY = 0;
+var idleFrames = 0;
+var SIZE = 45;
+var currentMode = "avatar";
+var lastSendState = "";
+var isGrabbed = false;
+var microActionTimer = 0;
+var moodTimer = 0;
+var lastInteractionTime = Date.now();
+var mood = "neutral";
+var mouseNearby = false;
+var proactiveTimer = 0;
+var hasGreeted = false;
+var wasMusicPlaying = false;
+var proactiveMessages = [
 	"*stretches*",
 	"*wonders what you're doing*",
 	"*hums a little tune*",
@@ -895,298 +1202,491 @@ var N = l(te(import.meta.url)), at = u(N, "preload.js"), P = null, F = null, I =
 	"*notices something interesting*",
 	"*happily wiggles*"
 ];
-function Z(e) {
-	P && !P.isDestroyed() && P.webContents.send("micro-action", e);
+function sendMicroAction(action) {
+	if (win && !win.isDestroyed()) win.webContents.send("micro-action", action);
 }
-function pt(e) {
-	P && !P.isDestroyed() && st !== e && (st = e, P.webContents.send("ai-state-change", e));
+function sendState(state) {
+	if (win && !win.isDestroyed() && lastSendState !== state) {
+		lastSendState = state;
+		win.webContents.send("ai-state-change", state);
+	}
 }
-async function mt() {
+async function loadUserName() {
 	try {
-		let e = await f.readFile(ot, "utf-8"), t = JSON.parse(e);
-		t.name && (I = t.name);
+		const data = await promises.readFile(USER_NAME_PATH, "utf-8");
+		const parsed = JSON.parse(data);
+		if (parsed.name) userName = parsed.name;
 	} catch {}
 }
-async function ht(e) {
-	I = e;
+async function saveUserName(name) {
+	userName = name;
 	try {
-		await f.writeFile(ot, JSON.stringify({ name: e }));
-	} catch (e) {
-		console.error("Failed to save user name:", e);
+		await promises.writeFile(USER_NAME_PATH, JSON.stringify({ name }));
+	} catch (err) {
+		console.error("Failed to save user name:", err);
 	}
-	F && !F.isDestroyed() && F.setToolTip(I + " Buddy");
+	if (tray && !tray.isDestroyed()) tray.setToolTip(userName + " Buddy");
 }
-function Q(e) {
-	let t = W * 2, n, r, i = 0;
-	do
-		n = e.x + t + Math.random() * (e.width - t * 2), r = e.y + t + Math.random() * (e.height - t * 2), i++;
-	while (Math.hypot(n - L, r - R) < 300 && i < 20);
-	V = n, H = r, U = 0;
+function pickNewTarget(wa) {
+	const margin = SIZE * 2;
+	let tx, ty, attempts = 0;
+	do {
+		tx = wa.x + margin + Math.random() * (wa.width - margin * 2);
+		ty = wa.y + margin + Math.random() * (wa.height - margin * 2);
+		attempts++;
+	} while (Math.hypot(tx - px, ty - py) < 300 && attempts < 20);
+	targetX = tx;
+	targetY = ty;
+	idleFrames = 0;
 }
-function gt() {
+function startPhysicsLoop() {
 	setInterval(() => {
 		try {
-			if (!P || P.isDestroyed() || G !== "avatar" || K) return;
-			let e = c.getPrimaryDisplay().workArea;
-			if (!e || !e.width || !e.height) return;
-			V === 0 && H === 0 && Q(e);
-			let t = V - L, n = H - R, r = Math.hypot(t, n);
-			if (r < 3) {
-				if (z = 0, B = 0, U++, U > 1800 && Q(e), ct++, ct > 200 + Math.random() * 300) {
-					ct = 0;
-					let e = Math.random();
-					Z(e < .25 ? "blink" : e < .5 ? Math.random() > .5 ? "glance-left" : "glance-right" : e < .75 ? "look-around" : "bounce");
+			if (!win || win.isDestroyed() || currentMode !== "avatar" || isGrabbed) return;
+			const wa = screen.getPrimaryDisplay().workArea;
+			if (!wa || !wa.width || !wa.height) return;
+			if (targetX === 0 && targetY === 0) pickNewTarget(wa);
+			const dx = targetX - px;
+			const dy = targetY - py;
+			const dist = Math.hypot(dx, dy);
+			if (dist < 3) {
+				vx = 0;
+				vy = 0;
+				idleFrames++;
+				if (idleFrames > 1800) pickNewTarget(wa);
+				microActionTimer++;
+				if (microActionTimer > 200 + Math.random() * 300) {
+					microActionTimer = 0;
+					const r = Math.random();
+					if (r < .25) sendMicroAction("blink");
+					else if (r < .5) sendMicroAction(Math.random() > .5 ? "glance-left" : "glance-right");
+					else if (r < .75) sendMicroAction("look-around");
+					else sendMicroAction("bounce");
 				}
 			} else {
-				let e = .8;
-				e = J === "bouncy" ? 1.5 + Math.random() * .5 : J === "happy" ? 1 + Math.random() * .4 : J === "sleepy" ? .5 + Math.random() * .3 : .8 + Math.random() * .4, Y && (e *= 1.3);
-				let i = e;
-				z = t / r * i, B = n / r * i + .15, Math.random() < .002 && Z("bounce");
+				let baseSpeed = .8;
+				if (mood === "bouncy") baseSpeed = 1.5 + Math.random() * .5;
+				else if (mood === "happy") baseSpeed = 1 + Math.random() * .4;
+				else if (mood === "sleepy") baseSpeed = .5 + Math.random() * .3;
+				else baseSpeed = .8 + Math.random() * .4;
+				if (mouseNearby) baseSpeed *= 1.3;
+				const speed = baseSpeed;
+				vx = dx / dist * speed;
+				vy = dy / dist * speed + .15;
+				if (Math.random() < .002) sendMicroAction("bounce");
 			}
-			L += z, R += B, L + W >= e.x + e.width ? (L = e.x + e.width - W, z = -(1.5 + Math.random() * 1.5), Q(e)) : L <= e.x && (L = e.x, z = 1.5 + Math.random() * 1.5, Q(e)), R + W >= e.y + e.height ? (R = e.y + e.height - W, B = -(1 + Math.random() * 1), Q(e)) : R <= e.y && (R = e.y, B = 1 + Math.random() * 1, Q(e)), J === "sleepy" && r < 3 && Math.random() < 5e-4 && Z("bounce");
-			let i = we();
-			if (i && !dt) {
-				if (Z("bounce"), q = Date.now(), P && !P.isDestroyed()) {
-					let e = [
+			px += vx;
+			py += vy;
+			if (px + SIZE >= wa.x + wa.width) {
+				px = wa.x + wa.width - SIZE;
+				vx = -(1.5 + Math.random() * 1.5);
+				pickNewTarget(wa);
+			} else if (px <= wa.x) {
+				px = wa.x;
+				vx = 1.5 + Math.random() * 1.5;
+				pickNewTarget(wa);
+			}
+			if (py + SIZE >= wa.y + wa.height) {
+				py = wa.y + wa.height - SIZE;
+				vy = -(1 + Math.random() * 1);
+				pickNewTarget(wa);
+			} else if (py <= wa.y) {
+				py = wa.y;
+				vy = 1 + Math.random() * 1;
+				pickNewTarget(wa);
+			}
+			if (mood === "sleepy" && dist < 3 && Math.random() < 5e-4) sendMicroAction("bounce");
+			const musicPlaying = isSpotifyPlaying();
+			if (musicPlaying && !wasMusicPlaying) {
+				sendMicroAction("bounce");
+				lastInteractionTime = Date.now();
+				if (win && !win.isDestroyed()) {
+					const reactions = [
 						"*bops to the beat*",
 						"*music makes me happy*",
 						"*starts dancing*",
 						"*feeling the rhythm*"
 					];
-					P.webContents.send("proactive-message", e[Math.floor(Math.random() * e.length)]);
+					win.webContents.send("proactive-message", reactions[Math.floor(Math.random() * reactions.length)]);
 				}
-			} else !i && dt && (X = !1);
-			if (dt = i, lt++, lt > 600) {
-				lt = 0;
-				let e = Date.now() - q;
-				if (i) {
-					J = "bouncy";
+			} else if (!musicPlaying && wasMusicPlaying) hasGreeted = false;
+			wasMusicPlaying = musicPlaying;
+			moodTimer++;
+			if (moodTimer > 600) {
+				moodTimer = 0;
+				const elapsed = Date.now() - lastInteractionTime;
+				if (musicPlaying) {
+					mood = "bouncy";
 					return;
 				}
-				J = e < 3e4 ? "bouncy" : e < 12e4 ? "happy" : e < 3e5 ? "neutral" : "sleepy";
-				let t = (/* @__PURE__ */ new Date()).getHours();
-				t >= 22 || t < 7 ? J = "sleepy" : t >= 6 && t < 12 ? J !== "sleepy" && (J = "happy") : t >= 17 && t < 22 && J === "neutral" && (J = "sleepy");
+				if (elapsed < 3e4) mood = "bouncy";
+				else if (elapsed < 12e4) mood = "happy";
+				else if (elapsed < 3e5) mood = "neutral";
+				else mood = "sleepy";
+				const hour = (/* @__PURE__ */ new Date()).getHours();
+				if (hour >= 22 || hour < 7) mood = "sleepy";
+				else if (hour >= 6 && hour < 12) {
+					if (mood !== "sleepy") mood = "happy";
+				} else if (hour >= 17 && hour < 22) {
+					if (mood === "neutral") mood = "sleepy";
+				}
 			}
-			if (G === "avatar" && r < 3 && J !== "sleepy" && (ut++, ut > 3600 + Math.random() * 3600)) {
-				ut = 0, Z("bounce");
-				let e = ft[Math.floor(Math.random() * ft.length)];
-				P && !P.isDestroyed() && P.webContents.send("proactive-message", e);
+			if (currentMode === "avatar" && dist < 3 && mood !== "sleepy") {
+				proactiveTimer++;
+				if (proactiveTimer > 3600 + Math.random() * 3600) {
+					proactiveTimer = 0;
+					sendMicroAction("bounce");
+					const msg = proactiveMessages[Math.floor(Math.random() * proactiveMessages.length)];
+					if (win && !win.isDestroyed()) win.webContents.send("proactive-message", msg);
+				}
 			}
-			if (Y) {
-				if (Date.now() - q > 3e5 && !X) {
-					X = !0, Z("bounce");
-					let e = [
+			if (mouseNearby) {
+				if (Date.now() - lastInteractionTime > 3e5 && !hasGreeted) {
+					hasGreeted = true;
+					sendMicroAction("bounce");
+					const greetings = [
 						"Welcome back!",
 						"There you are!",
 						"You're back!",
 						"Hello again!",
 						"Was wondering where you went!"
-					], t = e[Math.floor(Math.random() * e.length)];
-					P && !P.isDestroyed() && P.webContents.send("proactive-message", t);
+					];
+					const msg = greetings[Math.floor(Math.random() * greetings.length)];
+					if (win && !win.isDestroyed()) win.webContents.send("proactive-message", msg);
 				}
-			} else X = !1;
-			L = Math.max(e.x, Math.min(L, e.x + e.width - W)), R = Math.max(e.y, Math.min(R, e.y + e.height - W)), pt(z > 0 ? "walking-right" : z < 0 ? "walking-left" : "idle"), P.setBounds({
-				x: Math.round(L),
-				y: Math.round(R),
-				width: W,
-				height: W
+			} else hasGreeted = false;
+			px = Math.max(wa.x, Math.min(px, wa.x + wa.width - SIZE));
+			py = Math.max(wa.y, Math.min(py, wa.y + wa.height - SIZE));
+			if (vx > 0) sendState("walking-right");
+			else if (vx < 0) sendState("walking-left");
+			else sendState("idle");
+			win.setBounds({
+				x: Math.round(px),
+				y: Math.round(py),
+				width: SIZE,
+				height: SIZE
 			});
-		} catch {}
+		} catch (_) {}
 	}, 1e3 / 60);
 }
-function _t() {
-	P = new e({
-		width: W,
-		height: W,
-		show: !1,
-		frame: !1,
-		transparent: !0,
-		skipTaskbar: !0,
-		alwaysOnTop: !0,
-		resizable: !1,
-		hasShadow: !1,
+function createWindow() {
+	win = new BrowserWindow({
+		width: SIZE,
+		height: SIZE,
+		show: false,
+		frame: false,
+		transparent: true,
+		skipTaskbar: true,
+		alwaysOnTop: true,
+		resizable: false,
+		hasShadow: false,
 		minWidth: 0,
 		minHeight: 0,
 		webPreferences: {
-			preload: at,
-			nodeIntegration: !0,
-			contextIsolation: !0,
-			backgroundThrottling: !1,
-			webSecurity: !1
+			preload,
+			nodeIntegration: true,
+			contextIsolation: true,
+			backgroundThrottling: false,
+			webSecurity: false
 		}
-	}), process.env.VITE_DEV_SERVER_URL ? P.loadURL(process.env.VITE_DEV_SERVER_URL) : P.loadFile(u(N, "../dist/index.html")), P.on("close", (e) => {
-		e.preventDefault(), P?.hide();
-	}), le(P), Ve(P);
+	});
+	if (process.env.VITE_DEV_SERVER_URL) win.loadURL(process.env.VITE_DEV_SERVER_URL);
+	else win.loadFile(join(__dirname, "../dist/index.html"));
+	win.on("close", (e) => {
+		if (!isQuitting) {
+			e.preventDefault();
+			win?.hide();
+		}
+	});
+	startRamGuard(win);
+	startAiService(win);
 }
-function vt() {
-	let e = u(N, "../public/icon.png");
-	process.env.VITE_DEV_SERVER_URL || (e = u(N, "../dist/icon.png")), F = new n(s.createFromPath(e).resize({
+function createTray() {
+	let iconPath = join(__dirname, "../public/icon.png");
+	if (!process.env.VITE_DEV_SERVER_URL) iconPath = join(__dirname, "../dist/icon.png");
+	tray = new Tray(nativeImage.createFromPath(iconPath).resize({
 		width: 24,
 		height: 24
-	})), F.setToolTip(I + " Buddy"), F.on("click", () => yt());
-	let i = t.buildFromTemplate([
+	}));
+	tray.setToolTip(userName + " Buddy");
+	tray.on("click", () => toggleWindow());
+	const contextMenu = Menu.buildFromTemplate([
 		{
-			label: "Set Name...",
+			label: "Settings...",
 			click: () => {
-				P && !P.isDestroyed() && P.webContents.send("set-user-name-prompt");
+				openSettingsWindow();
 			}
 		},
 		{ type: "separator" },
 		{
 			label: "Quit",
 			click: () => {
-				r.quit();
+				app.quit();
 			}
 		}
 	]);
-	F.on("right-click", () => F?.popUpContextMenu(i));
+	tray.on("right-click", () => tray?.popUpContextMenu(contextMenu));
 }
-function yt() {
-	P && (P.isVisible() ? P.hide() : P.show());
+function toggleWindow() {
+	if (!win) return;
+	if (win.isVisible()) win.hide();
+	else win.show();
 }
-o.on("resize-window", (e, t) => {
-	if (!(!P || P.isDestroyed())) if (G = t, t === "avatar") K = !1, q = Date.now(), Q(c.getPrimaryDisplay().workArea);
-	else {
-		let { workArea: e } = c.getDisplayNearestPoint({
-			x: Math.round(L),
-			y: Math.round(R)
-		}), t = Math.round(L - 127.5), n = Math.round(R - 355);
-		t < e.x && (t = e.x), t + 300 > e.x + e.width && (t = e.x + e.width - 300), n < e.y && (n = e.y), P.setBounds({
-			x: t,
-			y: n,
+ipcMain.on("resize-window", (_event, mode) => {
+	if (!win || win.isDestroyed()) return;
+	currentMode = mode;
+	if (mode === "avatar") {
+		isGrabbed = false;
+		lastInteractionTime = Date.now();
+		pickNewTarget(screen.getPrimaryDisplay().workArea);
+	} else {
+		const { workArea } = screen.getDisplayNearestPoint({
+			x: Math.round(px),
+			y: Math.round(py)
+		});
+		let fx = Math.round(px - 127.5);
+		let fy = Math.round(py - 355);
+		if (fx < workArea.x) fx = workArea.x;
+		if (fx + 300 > workArea.x + workArea.width) fx = workArea.x + workArea.width - 300;
+		if (fy < workArea.y) fy = workArea.y;
+		win.setBounds({
+			x: fx,
+			y: fy,
 			width: 300,
 			height: 400
-		}), pt("ready");
+		});
+		sendState("ready");
 	}
-}), o.on("drag-window", (e, t, n) => {
-	G === "avatar" && (K = !0, L += t, R += n, P?.setBounds({
-		x: Math.round(L),
-		y: Math.round(R),
-		width: W,
-		height: W
-	}));
-}), o.on("end-drag", (e, t, n, r) => {
-	if (G === "avatar" && (K = !1, q = Date.now(), r)) {
-		z = Math.max(-20, Math.min(20, t)), B = n - 5;
-		let e = c.getPrimaryDisplay().workArea;
-		V = Math.max(e.x + W, Math.min(e.x + e.width - W, L + z * 30)), H = Math.max(e.y + W, Math.min(e.y + e.height - W, R + B * 30)), U = 0;
-	}
-}), o.on("set-ignore-mouse-events", (e, t, n) => {
-	P && !P.isDestroyed() && (n ? P.setIgnoreMouseEvents(t, n) : P.setIgnoreMouseEvents(t));
-}), o.on("mouse-position", (e, t, n) => {
-	Y = Math.abs(t) < 100 && Math.abs(n) < 100, Y && (q = Date.now());
-}), o.on("navigate-to-point", (e, t, n) => {
-	if (G !== "avatar") return;
-	let r = c.getPrimaryDisplay().workArea;
-	V = Math.max(r.x + W, Math.min(t, r.x + r.width - W)), H = Math.max(r.y + W, Math.min(n, r.y + r.height - W)), U = 0;
-}), r.whenReady().then(async () => {
-	if (await mt(), _t(), vt(), P) {
-		let { workArea: e } = c.getPrimaryDisplay();
-		L = Math.round(e.x + e.width / 2 - W / 2), R = Math.round(e.y + e.height / 2 - W / 2), Q(e), P.setBounds({
-			x: L,
-			y: R,
-			width: W,
-			height: W
-		}), P.setAlwaysOnTop(!0, "screen-saver");
-	}
-	gt(), P?.show(), a.register("CommandOrControl+Shift+Space", () => yt()), r.on("activate", () => {
-		e.getAllWindows().length === 0 && _t();
-	});
-}), r.on("window-all-closed", () => {
-	process.platform !== "darwin" && r.quit();
-}), r.on("will-quit", () => {
-	F?.destroy(), a.unregisterAll();
-}), o.on("quit-app", () => {
-	r.quit();
-}), o.on("save-spotify-config", (e, t, n) => {
-	_e(t, n);
-}), o.handle("get-spotify-config", async () => ge()), o.on("authenticate-spotify", (t) => {
-	let n = e.fromWebContents(t.sender);
-	n && be(n).catch(console.error);
 });
-var $ = null;
-o.on("open-character-editor", () => {
-	if ($ && !$.isDestroyed()) {
-		$.focus();
-		return;
-	}
-	$ = new e({
-		width: 600,
-		height: 700,
-		show: !0,
-		autoHideMenuBar: !0,
-		webPreferences: {
-			preload: at,
-			nodeIntegration: !0,
-			contextIsolation: !0,
-			webSecurity: !1
-		}
-	}), process.env.VITE_DEV_SERVER_URL ? $.loadURL(process.env.VITE_DEV_SERVER_URL + "?window=character-editor") : $.loadFile(u(N, "../dist/index.html"), { search: "window=character-editor" }), $.on("closed", () => {
-		$ = null;
-	});
-}), o.handle("get-character-config", async () => h()), o.handle("save-character-config", async (t, n) => (fe(n), e.getAllWindows().forEach((e) => {
-	e.isDestroyed() || e.webContents.send("character-config-updated", n);
-}), !0)), o.handle("get-avatar-config", async () => await O()), o.handle("select-avatar-image", async (t, n) => {
-	let r = e.fromWebContents(t.sender);
-	if (r) {
-		let e = await Je(r, n);
-		return e && r.webContents.send("avatar-config-updated", e), e;
-	}
-	return null;
-}), o.handle("create-bundle", async (e, t, n, r) => {
-	let i = await O(), a = h();
-	try {
-		return {
-			success: !0,
-			manifest: await tt(t, n, r, i, a)
-		};
-	} catch (e) {
-		return {
-			success: !1,
-			error: e.message
-		};
-	}
-}), o.handle("install-bundle", async (t, n) => {
-	let { newConfig: i, manifest: a } = await nt(n, await O());
-	if (a.characterName || a.themeColor || a.personalityPrompt || a.characterTips) {
-		let t = h();
-		a.characterName && (t.characterName = a.characterName), a.themeColor && (t.themeColor = a.themeColor), a.personalityPrompt && (t.personalityPrompt = a.personalityPrompt), a.characterTips && (t.characterTips = a.characterTips), fe(t), e.getAllWindows().forEach((e) => {
-			e.isDestroyed() || e.webContents.send("character-config-updated", t);
+ipcMain.on("drag-window", (_event, dx, dy) => {
+	if (currentMode === "avatar") {
+		isGrabbed = true;
+		px += dx;
+		py += dy;
+		win?.setBounds({
+			x: Math.round(px),
+			y: Math.round(py),
+			width: SIZE,
+			height: SIZE
 		});
 	}
-	let { join: o } = await import("node:path"), { promises: s } = await import("node:fs"), c = o(r.getPath("userData"), "avatar-config.json");
-	return await s.writeFile(c, JSON.stringify(i, null, 2)), e.getAllWindows().forEach((e) => {
-		e.isDestroyed() || e.webContents.send("avatar-config-updated", i);
-	}), i;
-}), o.handle("list-bundles", async () => await rt()), o.handle("delete-bundle", async (e, t) => (await it(t), { success: !0 })), o.handle("get-user-name", async () => I), o.handle("set-user-name", async (e, t) => (await ht(t), { success: !0 })), o.on("update-tray-icon", async (e, t) => {
-	if (!(!F || F.isDestroyed())) try {
-		let e = s.createFromPath(t).resize({
+});
+ipcMain.on("end-drag", (_event, _dragVx, _dragVy, wasDragged) => {
+	if (currentMode === "avatar") {
+		isGrabbed = false;
+		lastInteractionTime = Date.now();
+		if (wasDragged) {
+			vx = Math.max(-20, Math.min(20, _dragVx));
+			vy = _dragVy - 5;
+			const wa = screen.getPrimaryDisplay().workArea;
+			targetX = Math.max(wa.x + SIZE, Math.min(wa.x + wa.width - SIZE, px + vx * 30));
+			targetY = Math.max(wa.y + SIZE, Math.min(wa.y + wa.height - SIZE, py + vy * 30));
+			idleFrames = 0;
+		}
+	}
+});
+ipcMain.on("set-ignore-mouse-events", (_event, ignore, options) => {
+	if (win && !win.isDestroyed()) if (options) win.setIgnoreMouseEvents(ignore, options);
+	else win.setIgnoreMouseEvents(ignore);
+});
+ipcMain.on("mouse-position", (_event, x, y) => {
+	mouseNearby = Math.abs(x) < 100 && Math.abs(y) < 100;
+	if (mouseNearby) lastInteractionTime = Date.now();
+});
+ipcMain.on("navigate-to-point", (_event, x, y) => {
+	if (currentMode !== "avatar") return;
+	const area = screen.getPrimaryDisplay().workArea;
+	targetX = Math.max(area.x + SIZE, Math.min(x, area.x + area.width - SIZE));
+	targetY = Math.max(area.y + SIZE, Math.min(y, area.y + area.height - SIZE));
+	idleFrames = 0;
+});
+app.whenReady().then(async () => {
+	await loadUserName();
+	createWindow();
+	createTray();
+	if (win) {
+		const { workArea } = screen.getPrimaryDisplay();
+		px = Math.round(workArea.x + workArea.width / 2 - SIZE / 2);
+		py = Math.round(workArea.y + workArea.height / 2 - SIZE / 2);
+		pickNewTarget(workArea);
+		win.setBounds({
+			x: px,
+			y: py,
+			width: SIZE,
+			height: SIZE
+		});
+		win.setAlwaysOnTop(true, "screen-saver");
+	}
+	startPhysicsLoop();
+	win?.show();
+	globalShortcut.register("CommandOrControl+Shift+Space", () => toggleWindow());
+	app.on("activate", () => {
+		if (BrowserWindow.getAllWindows().length === 0) createWindow();
+	});
+});
+app.on("window-all-closed", () => {
+	if (process.platform !== "darwin") app.quit();
+});
+app.on("before-quit", () => {
+	isQuitting = true;
+});
+app.on("will-quit", () => {
+	tray?.destroy();
+	globalShortcut.unregisterAll();
+});
+ipcMain.on("quit-app", () => {
+	app.quit();
+});
+ipcMain.on("save-spotify-config", (_event, id, secret) => {
+	saveSpotifyConfig(id, secret);
+});
+ipcMain.handle("get-spotify-config", async () => {
+	return loadSpotifyConfig();
+});
+ipcMain.on("authenticate-spotify", (event) => {
+	const w = BrowserWindow.fromWebContents(event.sender);
+	if (w) authenticateSpotify(w).catch(console.error);
+});
+var settingsWin = null;
+ipcMain.on("open-character-editor", () => {
+	openSettingsWindow("character");
+});
+ipcMain.on("open-settings-window", () => {
+	openSettingsWindow();
+});
+function openSettingsWindow(tab) {
+	if (settingsWin && !settingsWin.isDestroyed()) {
+		settingsWin.focus();
+		if (tab) settingsWin.webContents.send("navigate-settings-tab", tab);
+		return;
+	}
+	settingsWin = new BrowserWindow({
+		width: 950,
+		height: 750,
+		show: true,
+		frame: false,
+		transparent: true,
+		webPreferences: {
+			preload,
+			nodeIntegration: true,
+			contextIsolation: true,
+			webSecurity: false
+		}
+	});
+	const query = tab ? `?window=settings&tab=${tab}` : `?window=settings`;
+	if (process.env.VITE_DEV_SERVER_URL) settingsWin.loadURL(process.env.VITE_DEV_SERVER_URL + query);
+	else settingsWin.loadFile(join(__dirname, "../dist/index.html"), { search: query.replace("?", "") });
+	settingsWin.on("closed", () => {
+		settingsWin = null;
+	});
+}
+ipcMain.handle("get-character-config", async () => {
+	return getCharacterConfig();
+});
+ipcMain.handle("save-character-config", async (_event, config) => {
+	saveCharacterConfig(config);
+	BrowserWindow.getAllWindows().forEach((w) => {
+		if (!w.isDestroyed()) w.webContents.send("character-config-updated", config);
+	});
+	return true;
+});
+ipcMain.handle("get-avatar-config", async () => {
+	return await getAvatarConfig();
+});
+ipcMain.handle("select-avatar-image", async (event, state) => {
+	const w = BrowserWindow.fromWebContents(event.sender);
+	if (w) {
+		const config = await selectAndCopyAvatarImage(w, state);
+		if (config) w.webContents.send("avatar-config-updated", config);
+		return config;
+	}
+	return null;
+});
+ipcMain.handle("create-bundle", async (_event, name, author, description) => {
+	const config = await getAvatarConfig();
+	const charConfig = getCharacterConfig();
+	try {
+		return {
+			success: true,
+			manifest: await createBundle(name, author, description, config, charConfig)
+		};
+	} catch (err) {
+		return {
+			success: false,
+			error: err.message
+		};
+	}
+});
+ipcMain.handle("install-bundle", async (_event, bundleId) => {
+	const { newConfig, manifest } = await installBundle(bundleId, await getAvatarConfig());
+	if (manifest.characterName || manifest.themeColor || manifest.personalityPrompt || manifest.characterTips) {
+		const charConfig = getCharacterConfig();
+		if (manifest.characterName) charConfig.characterName = manifest.characterName;
+		if (manifest.themeColor) charConfig.themeColor = manifest.themeColor;
+		if (manifest.personalityPrompt) charConfig.personalityPrompt = manifest.personalityPrompt;
+		if (manifest.characterTips) charConfig.characterTips = manifest.characterTips;
+		saveCharacterConfig(charConfig);
+		BrowserWindow.getAllWindows().forEach((w) => {
+			if (!w.isDestroyed()) w.webContents.send("character-config-updated", charConfig);
+		});
+	}
+	const { join } = await import("node:path");
+	const { promises: fs } = await import("node:fs");
+	const CONFIG_PATH = join(app.getPath("userData"), "avatar-config.json");
+	await fs.writeFile(CONFIG_PATH, JSON.stringify(newConfig, null, 2));
+	BrowserWindow.getAllWindows().forEach((w) => {
+		if (!w.isDestroyed()) w.webContents.send("avatar-config-updated", newConfig);
+	});
+	return newConfig;
+});
+ipcMain.handle("list-bundles", async () => {
+	return await listBundles();
+});
+ipcMain.handle("delete-bundle", async (_event, bundleId) => {
+	await deleteBundle(bundleId);
+	return { success: true };
+});
+ipcMain.handle("get-user-name", async () => {
+	return userName;
+});
+ipcMain.handle("set-user-name", async (_event, name) => {
+	await saveUserName(name);
+	return { success: true };
+});
+ipcMain.on("update-tray-icon", async (_event, imagePath) => {
+	if (!tray || tray.isDestroyed()) return;
+	try {
+		const icon = nativeImage.createFromPath(imagePath).resize({
 			width: 24,
 			height: 24
 		});
-		F.setImage(e);
+		tray.setImage(icon);
 	} catch {
-		let e = u(N, "../dist/icon.png");
+		const iconPath = join(__dirname, "../dist/icon.png");
 		try {
-			let t = s.createFromPath(e).resize({
+			const icon = nativeImage.createFromPath(iconPath).resize({
 				width: 24,
 				height: 24
 			});
-			F.setImage(t);
+			tray.setImage(icon);
 		} catch {}
 	}
-}), o.handle("reset-avatar-image", async (t, n) => {
-	let r = e.fromWebContents(t.sender);
-	if (r) {
-		let e = await Ye(n);
-		return r.webContents.send("avatar-config-updated", e), e;
+});
+ipcMain.handle("reset-avatar-image", async (event, state) => {
+	const w = BrowserWindow.fromWebContents(event.sender);
+	if (w) {
+		const config = await resetAvatarImage(state);
+		w.webContents.send("avatar-config-updated", config);
+		return config;
 	}
 	return null;
-}), o.handle("save-generated-avatar-set", async (t, n) => {
-	let r = e.fromWebContents(t.sender);
-	if (r) {
-		let e = await Xe(n);
-		return r.webContents.send("avatar-config-updated", e), e;
+});
+ipcMain.handle("save-generated-avatar-set", async (event, images) => {
+	const w = BrowserWindow.fromWebContents(event.sender);
+	if (w) {
+		const config = await saveGeneratedAvatarSet(images);
+		w.webContents.send("avatar-config-updated", config);
+		return config;
 	}
 	return null;
 });

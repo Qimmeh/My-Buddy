@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setIgnoreMouseEvents: (ignore: boolean, options?: { forward: boolean }) => ipcRenderer.send('set-ignore-mouse-events', ignore, options),
   quitApp: () => ipcRenderer.send('quit-app'),
   
+  // Settings
+  openSettingsWindow: () => ipcRenderer.send('open-settings-window'),
+  
   // Character config
   openCharacterEditor: () => ipcRenderer.send('open-character-editor'),
   getCharacterConfig: () => ipcRenderer.invoke('get-character-config'),
